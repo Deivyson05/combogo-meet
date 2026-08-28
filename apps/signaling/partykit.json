@@ -4,6 +4,6 @@
   "main": "src/room.ts",
   "compatibilityDate": "2024-07-01",
   "vars": {
-    "API_FINALIZE_URL": "http://localhost:3001/rooms/finalize-webhook"
+    "API_FINALIZE_URL": "https://combogo-meet-api.vercel.app/rooms/finalize-webhook"
   }
 }
