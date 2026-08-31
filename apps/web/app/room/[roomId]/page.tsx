@@ -22,15 +22,15 @@ export default function RoomPage() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
 
+  // ID de quem está em destaque na tela principal (pode ser o ID de um peer ou "local")
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+
   const media = useMediaStream();
   const peers = usePeerConnections(roomId, displayName ?? "", media.localStream);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
 
   const participants = Object.values(peers.remoteParticipants);
-  const remotePresenter = participants.find((p) => p.isSharingScreen);
-  const isSomeonePresenting = media.isSharingScreen || !!remotePresenter;
-  const galleryParticipants = participants.filter((p) => !p.isSharingScreen);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("combogo-display-name");
@@ -109,13 +109,13 @@ export default function RoomPage() {
       media.stopScreenShare();
       const camTrack = media.cameraTrack();
       if (camTrack) peers.replaceVideoTrackForAll(camTrack);
-
-      peers.broadcastScreenState(false);
     } else {
       const screenTrack = await media.startScreenShare();
-      if (screenTrack) peers.replaceVideoTrackForAll(screenTrack);
-
-      peers.broadcastScreenState(true);
+      if (screenTrack) {
+        peers.replaceVideoTrackForAll(screenTrack);
+        // Opcional: Se você começou a compartilhar, fixa automaticamente sua tela no destaque
+        setPinnedId("local");
+      }
     }
   }
 
@@ -160,6 +160,18 @@ export default function RoomPage() {
     );
   }
 
+  // Identifica quem está fixado no momento (se houver)
+  const pinnedParticipant = pinnedId && pinnedId !== "local" 
+    ? participants.find((p) => p.id === pinnedId) 
+    : null;
+
+  const isPinnedLocal = pinnedId === "local";
+  const hasPin = Boolean(pinnedId);
+
+  // Lista de quem vai para a galeria (todos exceto o fixado, caso haja um pin)
+  const galleryLocalShow = !hasPin || !isPinnedLocal;
+  const galleryRemoteList = participants.filter((p) => p.id !== pinnedId);
+
   return (
     <main className="flex min-h-screen flex-col px-6">
       <header className="flex items-center justify-between py-4">
@@ -172,55 +184,93 @@ export default function RoomPage() {
         </div>
       </header>
 
+      {/* LAYOUT DINÂMICO BASEADO NO PIN */}
       <section
         className={`flex-1 py-4 flex gap-4 ${
-          isSomeonePresenting ? "flex-col lg:flex-row" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          hasPin ? "flex-col lg:flex-row" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
         }`}
       >
-        {isSomeonePresenting && (
-          <div className="flex-1 bg-ink-900/5 dark:bg-ink-900/20 rounded-2xl overflow-hidden min-h-[50vh] lg:min-h-0">
-            {media.isSharingScreen ? (
-              <div className="flex h-full flex-col items-center justify-center text-center p-6">
-                <span className="text-4xl mb-4">🖥️</span>
-                <h3 className="text-xl font-medium text-ink-900 dark:text-white">Você está apresentando</h3>
-                <p className="text-ink-500">Sua tela está visível para todos na sala.</p>
-              </div>
-            ) : (
-              remotePresenter && (
+        {/* ÁREA DE DESTAQUE (PRINCIPAL) */}
+        {hasPin && (
+          <div className="flex-1 bg-ink-900/5 dark:bg-ink-900/20 rounded-2xl overflow-hidden min-h-[50vh] lg:min-h-0 relative group">
+            {isPinnedLocal ? (
+              <div className="relative h-full w-full">
                 <VideoTile
-                  stream={remotePresenter.stream}
-                  name={`${remotePresenter.name} (Apresentação)`}
+                  stream={media.localStream}
+                  name={`${displayName ?? "Você"} (Fixado)`}
+                  isLocal
+                  micOn={media.isMicOn}
                   className="h-full w-full object-contain"
                 />
+                <button
+                  onClick={() => setPinnedId(null)}
+                  className="absolute top-3 right-3 bg-black/60 hover:bg-black text-white text-xs px-3 py-1.5 rounded-lg backdrop-blur-md transition"
+                >
+                  Desafixar 📌
+                </button>
+              </div>
+            ) : (
+              pinnedParticipant && (
+                <div className="relative h-full w-full">
+                  <VideoTile
+                    stream={pinnedParticipant.stream}
+                    name={`${pinnedParticipant.name} (Fixado)`}
+                    className="h-full w-full object-contain"
+                  />
+                  <button
+                    onClick={() => setPinnedId(null)}
+                    className="absolute top-3 right-3 bg-black/60 hover:bg-black text-white text-xs px-3 py-1.5 rounded-lg backdrop-blur-md transition"
+                  >
+                    Desafixar 📌
+                  </button>
+                </div>
               )
             )}
           </div>
         )}
 
+        {/* GALERIA LATERAL OU GRADE NORMAL */}
         <div
           className={
-            isSomeonePresenting
+            hasPin
               ? "flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto lg:w-72 max-h-[25vh] lg:max-h-none shrink-0"
               : "contents"
           }
         >
-          {(!media.isSharingScreen || !isSomeonePresenting) && (
-            <VideoTile
-              stream={media.localStream}
-              name={displayName ?? "Você"}
-              isLocal
-              micOn={media.isMicOn}
-              className={isSomeonePresenting ? "w-48 lg:w-full shrink-0" : ""}
-            />
+          {galleryLocalShow && (
+            <div className="relative group shrink-0">
+              <VideoTile
+                stream={media.localStream}
+                name={displayName ?? "Você"}
+                isLocal
+                micOn={media.isMicOn}
+                className={hasPin ? "w-48 lg:w-full" : ""}
+              />
+              <button
+                onClick={() => setPinnedId("local")}
+                className="absolute top-2 right-2 bg-black/50 hover:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition"
+                title="Fixar na tela principal"
+              >
+                📌 Fixar
+              </button>
+            </div>
           )}
 
-          {galleryParticipants.map((p) => (
-            <VideoTile
-              key={p.id}
-              stream={p.stream}
-              name={p.name}
-              className={isSomeonePresenting ? "w-48 lg:w-full shrink-0" : ""}
-            />
+          {galleryRemoteList.map((p) => (
+            <div key={p.id} className="relative group shrink-0">
+              <VideoTile
+                stream={p.stream}
+                name={p.name}
+                className={hasPin ? "w-48 lg:w-full" : ""}
+              />
+              <button
+                onClick={() => setPinnedId(p.id)}
+                className="absolute top-2 right-2 bg-black/50 hover:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition"
+                title="Fixar na tela principal"
+              >
+                📌 Fixar
+              </button>
+            </div>
           ))}
         </div>
       </section>
