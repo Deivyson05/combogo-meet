@@ -10,7 +10,7 @@ import { useMediaStream } from "@/hooks/useMediaStream";
 import { usePeerConnections } from "@/hooks/usePeerConnections";
 import { sendTranscriptionChunk, finalizeRoom } from "@/lib/api";
 
-const CHUNK_INTERVAL_MS = 15_000; // envia trecho de áudio a cada 15s para transcrição
+const CHUNK_INTERVAL_MS = 15_000;
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -32,7 +32,6 @@ export default function RoomPage() {
   const isSomeonePresenting = media.isSharingScreen || !!remotePresenter;
   const galleryParticipants = participants.filter((p) => !p.isSharingScreen);
 
-  // Carrega o nome definido na landing page; se não houver, pede de novo.
   useEffect(() => {
     const stored = sessionStorage.getItem("combogo-display-name");
     if (stored) {
@@ -54,7 +53,6 @@ export default function RoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayName]);
 
-  // Grava periodicamente o áudio local e envia para transcrição.
   useEffect(() => {
     if (!media.localStream || !displayName) return;
 
@@ -63,7 +61,6 @@ export default function RoomPage() {
     let currentRecorder: MediaRecorder | null = null;
 
     const recordAndSendChunk = () => {
-      // Cria um novo gravador a cada ciclo
       const recorder = new MediaRecorder(audioOnly, { mimeType: "audio/webm" });
       currentRecorder = recorder;
       recorderRef.current = recorder;
@@ -113,12 +110,12 @@ export default function RoomPage() {
       const camTrack = media.cameraTrack();
       if (camTrack) peers.replaceVideoTrackForAll(camTrack);
 
-      peers.broadcastScreenState(false); // <-- AVISA QUE PAROU
+      peers.broadcastScreenState(false);
     } else {
       const screenTrack = await media.startScreenShare();
       if (screenTrack) peers.replaceVideoTrackForAll(screenTrack);
 
-      peers.broadcastScreenState(true); // <-- AVISA QUE COMEÇOU
+      peers.broadcastScreenState(true);
     }
   }
 
@@ -165,7 +162,6 @@ export default function RoomPage() {
 
   return (
     <main className="flex min-h-screen flex-col px-6">
-      {/* O HEADER CONTINUA IGUAL */}
       <header className="flex items-center justify-between py-4">
         <Logo />
         <div className="flex items-center gap-3">
@@ -176,23 +172,20 @@ export default function RoomPage() {
         </div>
       </header>
 
-      {/* NOVO LAYOUT DINÂMICO */}
       <section
-        className={`flex-1 py-4 flex gap-4 ${isSomeonePresenting ? "flex-col lg:flex-row" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-          }`}
+        className={`flex-1 py-4 flex gap-4 ${
+          isSomeonePresenting ? "flex-col lg:flex-row" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        }`}
       >
-        {/* ÁREA DE DESTAQUE (APRESENTAÇÃO) */}
         {isSomeonePresenting && (
           <div className="flex-1 bg-ink-900/5 dark:bg-ink-900/20 rounded-2xl overflow-hidden min-h-[50vh] lg:min-h-0">
             {media.isSharingScreen ? (
-              // Se você está apresentando, mostramos um banner ou o seu localStream
               <div className="flex h-full flex-col items-center justify-center text-center p-6">
                 <span className="text-4xl mb-4">🖥️</span>
                 <h3 className="text-xl font-medium text-ink-900 dark:text-white">Você está apresentando</h3>
                 <p className="text-ink-500">Sua tela está visível para todos na sala.</p>
               </div>
             ) : (
-              // Se outra pessoa está apresentando, mostra o vídeo dela gigante
               remotePresenter && (
                 <VideoTile
                   stream={remotePresenter.stream}
@@ -204,15 +197,13 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* GALERIA DOS OUTROS PARTICIPANTES */}
         <div
           className={
             isSomeonePresenting
               ? "flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto lg:w-72 max-h-[25vh] lg:max-h-none shrink-0"
-              : "contents" // 'contents' faz agir como se a div não existisse para o CSS Grid
+              : "contents"
           }
         >
-          {/* O seu próprio vídeo */}
           {(!media.isSharingScreen || !isSomeonePresenting) && (
             <VideoTile
               stream={media.localStream}
@@ -223,7 +214,6 @@ export default function RoomPage() {
             />
           )}
 
-          {/* Vídeo dos outros */}
           {galleryParticipants.map((p) => (
             <VideoTile
               key={p.id}
@@ -235,28 +225,17 @@ export default function RoomPage() {
         </div>
       </section>
 
-      {/* CONTROLES CONTINUAM IGUAIS */}
       <div className="sticky bottom-6 flex justify-center pb-6">
         <CallControls
-
           isMicOn={media.isMicOn}
-
           isCameraOn={media.isCameraOn}
-
           isSharingScreen={media.isSharingScreen}
-
           isHost={isHost}
-
           onToggleMic={media.toggleMic}
-
           onToggleCamera={media.toggleCamera}
-
           onToggleScreenShare={handleToggleScreenShare}
-
           onLeave={handleLeave}
-
           onEndForAll={handleEndForAll}
-
         />
       </div>
     </main>

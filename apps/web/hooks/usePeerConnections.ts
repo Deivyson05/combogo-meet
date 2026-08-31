@@ -20,7 +20,6 @@ type SignalMessage =
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
-  // TURN gratuito do Open Relay Project — troque por um TURN próprio em produção.
   {
     urls: "turn:openrelay.metered.ca:80",
     username: "openrelayproject",
@@ -69,10 +68,18 @@ export function usePeerConnections(
       };
 
       pc.ontrack = (event) => {
-        setRemoteParticipants((prev) => ({
-          ...prev,
-          [peerId]: { id: peerId, name: peerName, stream: event.streams[0] },
-        }));
+        setRemoteParticipants((prev) => {
+          const existing = prev[peerId];
+          return {
+            ...prev,
+            [peerId]: {
+              id: peerId,
+              name: peerName,
+              stream: event.streams[0],
+              isSharingScreen: existing ? existing.isSharingScreen : false,
+            },
+          };
+        });
       };
 
       pc.onconnectionstatechange = () => {
@@ -142,6 +149,7 @@ export function usePeerConnections(
 
     socket.addEventListener("open", () => {
       setConnected(true);
+      localIdRef.current = socket.id;
       socket.send(JSON.stringify({ type: "join", name: displayName }));
     });
 
@@ -152,8 +160,6 @@ export function usePeerConnections(
         case "peers":
           localIdRef.current = socket.id;
           msg.peers.forEach((peer) => {
-            // Convenção determinística: quem tem o id "menor" inicia a oferta,
-            // evitando que ambos os lados criem ofertas simultâneas (glare).
             const initiator = socket.id < peer.id;
             createPeerConnection(peer.id, peer.name, initiator);
           });
@@ -196,7 +202,6 @@ export function usePeerConnections(
     };
   }, [roomId, displayName, localStream, createPeerConnection, handleSignal]);
 
-  /** Troca a track de vídeo em todas as conexões ativas — usado no compartilhamento de tela. */
   const replaceVideoTrackForAll = useCallback((newTrack: MediaStreamTrack) => {
     peersRef.current.forEach((pc) => {
       const sender = pc.getSenders().find((s) => s.track?.kind === "video");
