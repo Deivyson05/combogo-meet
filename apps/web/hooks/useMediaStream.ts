@@ -5,6 +5,7 @@ import { useNoiseSuppression } from "./useNoiseSuppression";
 
 export function useMediaStream() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
@@ -36,30 +37,71 @@ export function useMediaStream() {
     setIsMicOn(track.enabled);
   }, []);
 
-  const toggleCamera = useCallback(() => {
-    const track = rawStreamRef.current?.getVideoTracks()[0];
-    if (!track) return;
-    track.enabled = !track.enabled;
-    setIsCameraOn(track.enabled);
+  /**
+   * Liga/desliga a câmera. Ao desligar, chamamos track.stop() em vez de só
+   * "enabled = false" — em vários navegadores mobile, deixar a track
+   * desabilitada suspende o hardware da câmera e ela não volta sozinha com
+   * "enabled = true". Ao religar, pedimos a câmera de novo com getUserMedia.
+   *
+   * Retorna a nova track (religando) ou null (desligando) — quem chama
+   * repassa isso para peers.replaceCameraTrackForAll(...).
+   */
+  const toggleCamera = useCallback(async (): Promise<MediaStreamTrack | null> => {
+    const currentTrack = rawStreamRef.current?.getVideoTracks()[0];
+
+    if (currentTrack) {
+      currentTrack.stop();
+      rawStreamRef.current?.removeTrack(currentTrack);
+      setLocalStream((prev) => {
+        prev?.getVideoTracks().forEach((t) => prev.removeTrack(t));
+        return prev;
+      });
+      setIsCameraOn(false);
+      return null;
+    }
+
+    const fresh = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: "user" },
+    });
+    const [newTrack] = fresh.getVideoTracks();
+
+    rawStreamRef.current?.addTrack(newTrack);
+    setLocalStream((prev) => {
+      prev?.addTrack(newTrack);
+      return prev;
+    });
+
+    setIsCameraOn(true);
+    return newTrack;
   }, []);
 
-  /** Retorna a track de tela — quem consome (usePeerConnections) decide como substituir a track de vídeo em cada conexão. */
+  /** Retorna a track de tela — usePeerConnections decide como enviá-la (addScreenTrackForAll). */
   const startScreenShare = useCallback(async (): Promise<MediaStreamTrack | null> => {
+    if (!navigator.mediaDevices.getDisplayMedia) {
+      throw new Error("Este navegador não suporta compartilhamento de tela.");
+    }
+
     const screenStream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 30 },
       audio: false,
     });
     screenStreamRef.current = screenStream;
+    setLocalScreenStream(screenStream);
     setIsSharingScreen(true);
 
     const [screenTrack] = screenStream.getVideoTracks();
-    screenTrack.onended = () => setIsSharingScreen(false);
+    screenTrack.onended = () => {
+      screenStreamRef.current = null;
+      setLocalScreenStream(null);
+      setIsSharingScreen(false);
+    };
     return screenTrack;
   }, []);
 
   const stopScreenShare = useCallback(() => {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
+    setLocalScreenStream(null);
     setIsSharingScreen(false);
   }, []);
 
@@ -68,10 +110,12 @@ export function useMediaStream() {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     cleanupNoise();
     setLocalStream(null);
+    setLocalScreenStream(null);
   }, [cleanupNoise]);
 
   return {
     localStream,
+    localScreenStream,
     isMicOn,
     isCameraOn,
     isSharingScreen,
@@ -81,6 +125,5 @@ export function useMediaStream() {
     startScreenShare,
     stopScreenShare,
     stopAll,
-    cameraTrack: () => rawStreamRef.current?.getVideoTracks()[0] ?? null,
   };
 }
