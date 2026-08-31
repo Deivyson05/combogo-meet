@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -10,9 +10,7 @@ import { useMediaStream } from "@/hooks/useMediaStream";
 import { usePeerConnections } from "@/hooks/usePeerConnections";
 import { sendTranscriptionChunk, finalizeRoom } from "@/lib/api";
 
-const CHUNK_INTERVAL_MS = 15_000;
-
-type Presentation = { id: string; name: string; stream: MediaStream };
+const CHUNK_INTERVAL_MS = 15_000; // envia trecho de áudio a cada 15s para transcrição
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -23,13 +21,18 @@ export default function RoomPage() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
-  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const media = useMediaStream();
   const peers = usePeerConnections(roomId, displayName ?? "", media.localStream);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
 
+  const participants = Object.values(peers.remoteParticipants);
+  const remotePresenter = participants.find((p) => p.isSharingScreen);
+  const isSomeonePresenting = media.isSharingScreen || !!remotePresenter;
+  const galleryParticipants = participants.filter((p) => !p.isSharingScreen);
+
+  // Carrega o nome definido na landing page; se não houver, pede de novo.
   useEffect(() => {
     const stored = sessionStorage.getItem("combogo-display-name");
     if (stored) {
@@ -51,6 +54,7 @@ export default function RoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayName]);
 
+  // Grava periodicamente o áudio local e envia para transcrição.
   useEffect(() => {
     if (!media.localStream || !displayName) return;
 
@@ -59,21 +63,32 @@ export default function RoomPage() {
     let currentRecorder: MediaRecorder | null = null;
 
     const recordAndSendChunk = () => {
+      // Cria um novo gravador a cada ciclo
       const recorder = new MediaRecorder(audioOnly, { mimeType: "audio/webm" });
       currentRecorder = recorder;
       recorderRef.current = recorder;
 
       const chunks: Blob[] = [];
+
       recorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data.size > 0) chunks.push(event.data);
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
       };
+
       recorder.onstop = () => {
         const audioBlob = new Blob(chunks, { type: "audio/webm" });
-        if (audioBlob.size > 0) sendTranscriptionChunk(roomId, displayName, audioBlob);
+        if (audioBlob.size > 0) {
+          sendTranscriptionChunk(roomId, displayName, audioBlob);
+        }
       };
+
       recorder.start();
+
       setTimeout(() => {
-        if (recorder.state === "recording") recorder.stop();
+        if (recorder.state === "recording") {
+          recorder.stop();
+        }
       }, CHUNK_INTERVAL_MS);
     };
 
@@ -82,7 +97,9 @@ export default function RoomPage() {
 
     return () => {
       clearInterval(intervalId);
-      if (currentRecorder && currentRecorder.state === "recording") currentRecorder.stop();
+      if (currentRecorder && currentRecorder.state === "recording") {
+        currentRecorder.stop();
+      }
     };
   }, [media.localStream, displayName, roomId]);
 
@@ -90,26 +107,18 @@ export default function RoomPage() {
     if (peers.roomClosed) setEnded(true);
   }, [peers.roomClosed]);
 
-  async function handleToggleCamera() {
-    const track = await media.toggleCamera();
-    peers.replaceCameraTrackForAll(track);
-  }
-
   async function handleToggleScreenShare() {
     if (media.isSharingScreen) {
       media.stopScreenShare();
-      peers.removeScreenTrackForAll();
+      const camTrack = media.cameraTrack();
+      if (camTrack) peers.replaceVideoTrackForAll(camTrack);
+
+      peers.broadcastScreenState(false); // <-- AVISA QUE PAROU
     } else {
-      try {
-        const screenTrack = await media.startScreenShare();
-        if (screenTrack) peers.addScreenTrackForAll(screenTrack);
-      } catch (err) {
-        alert(
-          err instanceof Error
-            ? err.message
-            : "Não foi possível compartilhar a tela neste dispositivo."
-        );
-      }
+      const screenTrack = await media.startScreenShare();
+      if (screenTrack) peers.replaceVideoTrackForAll(screenTrack);
+
+      peers.broadcastScreenState(true); // <-- AVISA QUE COMEÇOU
     }
   }
 
@@ -127,65 +136,36 @@ export default function RoomPage() {
     media.stopAll();
   }
 
-  const participants = Object.values(peers.remoteParticipants);
-
-  // Todas as apresentações ativas: a sua (se estiver compartilhando) + a de
-  // cada participante remoto que estiver compartilhando a tela.
-  const presentations: Presentation[] = useMemo(() => {
-    const list: Presentation[] = [];
-    if (media.isSharingScreen && media.localScreenStream) {
-      list.push({
-        id: "local",
-        name: `${displayName ?? "Você"} (você)`,
-        stream: media.localScreenStream,
-      });
-    }
-    participants.forEach((p) => {
-      if (p.screenStream) list.push({ id: p.id, name: p.name, stream: p.screenStream });
-    });
-    return list;
-  }, [media.isSharingScreen, media.localScreenStream, participants, displayName]);
-
-  const presentationIds = presentations.map((p) => p.id).join(",");
-
-  // Escolhe automaticamente a primeira apresentação pra destacar quando
-  // surge uma nova, ou quando a que estava em destaque termina. O usuário
-  // troca clicando em outra miniatura.
-  useEffect(() => {
-    if (presentations.length === 0) {
-      setFocusedId(null);
-      return;
-    }
-    setFocusedId((current) =>
-      current && presentations.some((p) => p.id === current) ? current : presentations[0].id
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presentationIds]);
-
-  const focusedPresentation = presentations.find((p) => p.id === focusedId) ?? null;
-
   if (ended) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
         <Logo />
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-ink-900 dark:text-white">A chamada terminou</h1>
+          <h1 className="text-2xl font-semibold text-ink-900 dark:text-white">
+            A chamada terminou
+          </h1>
           <p className="text-ink-500 dark:text-ink-400">
             A sala foi apagada. {downloadUrl ? "A transcrição está pronta:" : "Nenhum áudio foi transcrito."}
           </p>
         </div>
         {downloadUrl && (
-          <a href={downloadUrl} className="rounded-lg bg-primary-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-600">
+          <a
+            href={downloadUrl}
+            className="rounded-lg bg-primary-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-600"
+          >
             Baixar transcrição (.docx)
           </a>
         )}
-        <a href="/" className="text-sm text-ink-400 underline hover:text-ink-600">Voltar ao início</a>
+        <a href="/" className="text-sm text-ink-400 underline hover:text-ink-600">
+          Voltar ao início
+        </a>
       </main>
     );
   }
 
   return (
     <main className="flex min-h-screen flex-col px-6">
+      {/* O HEADER CONTINUA IGUAL */}
       <header className="flex items-center justify-between py-4">
         <Logo />
         <div className="flex items-center gap-3">
@@ -196,54 +176,87 @@ export default function RoomPage() {
         </div>
       </header>
 
-      {focusedPresentation ? (
-        <section className="flex flex-1 flex-col gap-3 py-4">
-          <div className="min-h-0 flex-1">
-            <VideoTile
-              stream={focusedPresentation.stream}
-              name={`${focusedPresentation.name} — apresentando`}
-              className="h-full"
-            />
-          </div>
-
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            <div className="w-36 shrink-0">
-              <VideoTile stream={media.localStream} name={displayName ?? "Você"} isLocal micOn={media.isMicOn} small />
-            </div>
-            {participants.map((p) => (
-              <div key={`cam-${p.id}`} className="w-36 shrink-0">
-                <VideoTile stream={p.cameraStream} name={p.name} small />
+      {/* NOVO LAYOUT DINÂMICO */}
+      <section
+        className={`flex-1 py-4 flex gap-4 ${isSomeonePresenting ? "flex-col lg:flex-row" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          }`}
+      >
+        {/* ÁREA DE DESTAQUE (APRESENTAÇÃO) */}
+        {isSomeonePresenting && (
+          <div className="flex-1 bg-ink-900/5 dark:bg-ink-900/20 rounded-2xl overflow-hidden min-h-[50vh] lg:min-h-0">
+            {media.isSharingScreen ? (
+              // Se você está apresentando, mostramos um banner ou o seu localStream
+              <div className="flex h-full flex-col items-center justify-center text-center p-6">
+                <span className="text-4xl mb-4">🖥️</span>
+                <h3 className="text-xl font-medium text-ink-900 dark:text-white">Você está apresentando</h3>
+                <p className="text-ink-500">Sua tela está visível para todos na sala.</p>
               </div>
-            ))}
-            {presentations
-              .filter((p) => p.id !== focusedId)
-              .map((p) => (
-                <button key={`screen-${p.id}`} onClick={() => setFocusedId(p.id)} className="w-36 shrink-0 text-left">
-                  <VideoTile stream={p.stream} name={`${p.name} — apresentando`} small />
-                </button>
-              ))}
+            ) : (
+              // Se outra pessoa está apresentando, mostra o vídeo dela gigante
+              remotePresenter && (
+                <VideoTile
+                  stream={remotePresenter.stream}
+                  name={`${remotePresenter.name} (Apresentação)`}
+                  className="h-full w-full object-contain"
+                />
+              )
+            )}
           </div>
-        </section>
-      ) : (
-        <section className="grid flex-1 grid-cols-1 gap-4 py-4 sm:grid-cols-2 lg:grid-cols-3">
-          <VideoTile stream={media.localStream} name={displayName ?? "Você"} isLocal micOn={media.isMicOn} />
-          {participants.map((p) => (
-            <VideoTile key={p.id} stream={p.cameraStream} name={p.name} />
-          ))}
-        </section>
-      )}
+        )}
 
+        {/* GALERIA DOS OUTROS PARTICIPANTES */}
+        <div
+          className={
+            isSomeonePresenting
+              ? "flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto lg:w-72 max-h-[25vh] lg:max-h-none shrink-0"
+              : "contents" // 'contents' faz agir como se a div não existisse para o CSS Grid
+          }
+        >
+          {/* O seu próprio vídeo */}
+          {(!media.isSharingScreen || !isSomeonePresenting) && (
+            <VideoTile
+              stream={media.localStream}
+              name={displayName ?? "Você"}
+              isLocal
+              micOn={media.isMicOn}
+              className={isSomeonePresenting ? "w-48 lg:w-full shrink-0" : ""}
+            />
+          )}
+
+          {/* Vídeo dos outros */}
+          {galleryParticipants.map((p) => (
+            <VideoTile
+              key={p.id}
+              stream={p.stream}
+              name={p.name}
+              className={isSomeonePresenting ? "w-48 lg:w-full shrink-0" : ""}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* CONTROLES CONTINUAM IGUAIS */}
       <div className="sticky bottom-6 flex justify-center pb-6">
         <CallControls
+
           isMicOn={media.isMicOn}
+
           isCameraOn={media.isCameraOn}
+
           isSharingScreen={media.isSharingScreen}
+
           isHost={isHost}
+
           onToggleMic={media.toggleMic}
-          onToggleCamera={handleToggleCamera}
+
+          onToggleCamera={media.toggleCamera}
+
           onToggleScreenShare={handleToggleScreenShare}
+
           onLeave={handleLeave}
+
           onEndForAll={handleEndForAll}
+
         />
       </div>
     </main>
