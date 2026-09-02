@@ -1,0 +1,16 @@
+{
+  "name": "combogo-meet-desktop",
+  "version": "0.1.0",
+  "description": "versão desktop do combogó meet",
+  "license": "ISC",
+  "author": "Deivyson05",
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \\\"Error: no test specified\\\" && exit 1"
+  },
+  "devDependencies": {
+    "electron": "^44.1.1"
+  }
+}

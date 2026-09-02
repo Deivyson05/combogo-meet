@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useNoiseSuppression } from "./useNoiseSuppression";
+import { getScreenStream } from "./screenShareRepository";
 
 export function useMediaStream() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -76,15 +77,9 @@ export function useMediaStream() {
   }, []);
 
   /** Retorna a track de tela — usePeerConnections decide como enviá-la (addScreenTrackForAll). */
+    /** Agora usando o repository para decidir se é web ou Electron */
   const startScreenShare = useCallback(async (): Promise<MediaStreamTrack | null> => {
-    if (!navigator.mediaDevices.getDisplayMedia) {
-      throw new Error("Este navegador não suporta compartilhamento de tela.");
-    }
-
-    const screenStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
-      audio: false,
-    });
+    const screenStream = await getScreenStream(); // chama o repository
     screenStreamRef.current = screenStream;
     setLocalScreenStream(screenStream);
     setIsSharingScreen(true);
