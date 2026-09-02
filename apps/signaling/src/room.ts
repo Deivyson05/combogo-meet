@@ -4,26 +4,20 @@ type JoinMessage = { type: "join"; name: string };
 type LeaveMessage = { type: "leave" };
 type SignalMessage = { type: "signal"; to: string; data: unknown };
 type EndForAllMessage = { type: "end-for-all" };
+type ChatMessage = { type: "chat"; text: string };
 type IncomingMessage =
   | JoinMessage
   | LeaveMessage
   | SignalMessage
-  | EndForAllMessage;
+  | EndForAllMessage
+  | ChatMessage;
 
-/**
- * Uma "sala" (Party.Room) por chamada. O PartyKit mantém o processo vivo
- * enquanto houver conexões — exatamente o que uma função serverless do
- * Vercel não sustenta. Quando a última pessoa sai, avisamos a API para
- * ela apagar a sala e gerar o documento final.
- */
 export default class RoomServer implements Party.Server {
   constructor(readonly room: Party.Room) {}
 
-  names = new Map<string, string>(); // connectionId -> nome de exibição
+  names = new Map<string, string>();
 
-  onConnect(conn: Party.Connection) {
-    // A conexão só é anunciada aos outros depois do "join" (para já vir com nome).
-  }
+  onConnect(conn: Party.Connection) {}
 
   onMessage(message: string, sender: Party.Connection) {
     const msg: IncomingMessage = JSON.parse(message);
@@ -31,14 +25,10 @@ export default class RoomServer implements Party.Server {
     switch (msg.type) {
       case "join": {
         this.names.set(sender.id, msg.name);
-
-        // Envia ao recém-chegado a lista de quem já está na sala.
         const peers = [...this.names.entries()]
           .filter(([id]) => id !== sender.id)
           .map(([id, name]) => ({ id, name }));
         sender.send(JSON.stringify({ type: "peers", peers }));
-
-        // Avisa os demais que alguém novo entrou.
         this.broadcastExcept(sender.id, {
           type: "peer-joined",
           id: sender.id,
@@ -52,6 +42,19 @@ export default class RoomServer implements Party.Server {
         target?.send(
           JSON.stringify({ type: "signal", from: sender.id, data: msg.data })
         );
+        break;
+      }
+
+      case "chat": {
+        const name = this.names.get(sender.id) ?? "Alguém";
+        this.broadcastAll({
+          type: "chat",
+          id: crypto.randomUUID(),
+          from: sender.id,
+          name,
+          text: msg.text,
+          ts: Date.now(),
+        });
         break;
       }
 
@@ -76,7 +79,6 @@ export default class RoomServer implements Party.Server {
   private handleDeparture(id: string) {
     this.names.delete(id);
     this.broadcastExcept(id, { type: "peer-left", id });
-
     if (this.names.size === 0) {
       this.notifyApiRoomClosed();
     }
@@ -89,7 +91,13 @@ export default class RoomServer implements Party.Server {
     }
   }
 
-  /** Sala vazia (ou encerrada pelo host) → API finaliza a transcrição e apaga tudo. */
+  private broadcastAll(payload: unknown) {
+    const data = JSON.stringify(payload);
+    for (const conn of this.room.getConnections()) {
+      conn.send(data);
+    }
+  }
+
   private async notifyApiRoomClosed() {
     const url = (this.room.env.API_FINALIZE_URL as string) || "";
     if (!url) return;
@@ -100,7 +108,7 @@ export default class RoomServer implements Party.Server {
         body: JSON.stringify({ roomId: this.room.id }),
       });
     } catch {
-      // best-effort — a sala do Redis também tem TTL como rede de segurança
+      // best-effort
     }
   }
 }

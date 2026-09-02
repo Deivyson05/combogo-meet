@@ -1,293 +1,346 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Logo } from "@/components/Logo";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { VideoTile } from "@/components/VideoTile";
-import { CallControls } from "@/components/CallControls";
-import { useMediaStream } from "@/hooks/useMediaStream";
-import { usePeerConnections } from "@/hooks/usePeerConnections";
-import { sendTranscriptionChunk, finalizeRoom } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import PartySocket from "partysocket";
 
-const CHUNK_INTERVAL_MS = 15_000;
+export type RemoteParticipant = {
+  id: string;
+  name: string;
+  cameraStream: MediaStream | null;
+  screenStream: MediaStream | null;
+};
 
-export default function RoomPage() {
-  const { roomId } = useParams<{ roomId: string }>();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const isHost = searchParams.get("host") === "1";
+export type ChatMessage = {
+  id: string;
+  from: string;
+  name: string;
+  text: string;
+  ts: number;
+};
 
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [ended, setEnded] = useState(false);
+type SdpSignalData = { sdp: RTCSessionDescriptionInit; candidate?: undefined };
+type CandidateSignalData = { candidate: RTCIceCandidateInit; sdp?: undefined };
+type SignalData = SdpSignalData | CandidateSignalData;
 
-  // ID de quem está em destaque na tela principal (pode ser o ID de um peer ou "local")
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
+type SignalMessage =
+  | { type: "peers"; peers: { id: string; name: string }[] }
+  | { type: "peer-joined"; id: string; name: string }
+  | { type: "peer-left"; id: string }
+  | { type: "signal"; from: string; data: SignalData }
+  | { type: "chat"; id: string; from: string; name: string; text: string; ts: number }
+  | { type: "room-closed" };
 
-  const media = useMediaStream();
-  const peers = usePeerConnections(roomId, displayName ?? "", media.localStream);
+type PeerState = {
+  pc: RTCPeerConnection;
+  polite: boolean;
+  makingOffer: boolean;
+  ignoreOffer: boolean;
+};
 
-  const recorderRef = useRef<MediaRecorder | null>(null);
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
 
-  const participants = Object.values(peers.remoteParticipants);
+export function usePeerConnections(
+  roomId: string,
+  displayName: string,
+  localStream: MediaStream | null
+) {
+  const [remoteParticipants, setRemoteParticipants] = useState <Record<string, RemoteParticipant>>({});
+  const [connected, setConnected] = useState(false);
+  const [roomClosed, setRoomClosed] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [localId, setLocalId] = useState("");
 
-  useEffect(() => {
-    const stored = sessionStorage.getItem("combogo-display-name");
-    if (stored) {
-      setDisplayName(stored);
-    } else {
-      const typed = window.prompt("Digite seu nome para entrar na sala:");
-      if (typed) {
-        sessionStorage.setItem("combogo-display-name", typed);
-        setDisplayName(typed);
+  const socketRef = useRef<PartySocket | null>(null);
+  const peersRef = useRef<Map<string, PeerState>>(new Map());
+  const localIdRef = useRef<string>("");
+
+  const cameraSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
+  const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
+  const screenTrackRef = useRef<MediaStreamTrack | null>(null);
+  const cameraStreamIdRef = useRef<Map<string, string>>(new Map());
+
+  const chatStorageKey = `combogo-chat-${roomId}`;
+
+  const cleanupPeer = useCallback((peerId: string) => {
+    cameraSendersRef.current.delete(peerId);
+    screenSendersRef.current.delete(peerId);
+    cameraStreamIdRef.current.delete(peerId);
+    setRemoteParticipants((prev: Record<string, RemoteParticipant>) => {
+      const next = { ...prev };
+      delete next[peerId];
+      return next;
+    });
+  }, []);
+
+  const createPeerConnection = useCallback(
+    (peerId: string, peerName: string, initiator: boolean) => {
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const state: PeerState = { pc, polite: !initiator, makingOffer: false, ignoreOffer: false };
+
+      localStream?.getTracks().forEach((track) => {
+        const sender = pc.addTrack(track, localStream);
+        if (track.kind === "video") cameraSendersRef.current.set(peerId, sender);
+      });
+
+      if (screenTrackRef.current) {
+        const sender = pc.addTrack(
+          screenTrackRef.current,
+          new MediaStream([screenTrackRef.current])
+        );
+        screenSendersRef.current.set(peerId, sender);
+      }
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socketRef.current?.send(
+            JSON.stringify({
+              type: "signal",
+              to: peerId,
+              data: { candidate: event.candidate.toJSON() },
+            })
+          );
+        }
+      };
+
+      pc.ontrack = (event) => {
+        const incomingStream = event.streams[0];
+        if (!incomingStream) return;
+
+        setRemoteParticipants((prev: Record<string, RemoteParticipant>) => {
+          const existing = prev[peerId] ?? {
+            id: peerId,
+            name: peerName,
+            cameraStream: null,
+            screenStream: null,
+          };
+
+          const knownCameraId = cameraStreamIdRef.current.get(peerId);
+
+          if (!knownCameraId) {
+            cameraStreamIdRef.current.set(peerId, incomingStream.id);
+            return { ...prev, [peerId]: { ...existing, cameraStream: incomingStream } };
+          }
+
+          if (incomingStream.id === knownCameraId) {
+            return { ...prev, [peerId]: { ...existing, cameraStream: incomingStream } };
+          }
+
+          incomingStream.onremovetrack = () => {
+            setRemoteParticipants((p: Record<string, RemoteParticipant>) => {
+              const current = p[peerId];
+              if (!current || current.screenStream?.id !== incomingStream.id) return p;
+              return { ...p, [peerId]: { ...current, screenStream: null } };
+            });
+          };
+
+          return { ...prev, [peerId]: { ...existing, screenStream: incomingStream } };
+        });
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+          cleanupPeer(peerId);
+        }
+      };
+
+      pc.onnegotiationneeded = async () => {
+        try {
+          state.makingOffer = true;
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          if (pc.localDescription) {
+            socketRef.current?.send(
+              JSON.stringify({
+                type: "signal",
+                to: peerId,
+                data: { sdp: pc.localDescription.toJSON() },
+              })
+            );
+          }
+        } catch (err) {
+          console.error("Falha ao negociar oferta", err);
+        } finally {
+          state.makingOffer = false;
+        }
+      };
+
+      peersRef.current.set(peerId, state);
+      return pc;
+    },
+    [localStream, cleanupPeer]
+  );
+
+  const handleSignal = useCallback(async (from: string, data: SignalData) => {
+    const state = peersRef.current.get(from);
+    if (!state) return;
+    const { pc } = state;
+
+    if (data.sdp) {
+      const offerCollision =
+        data.sdp.type === "offer" &&
+        (state.makingOffer || pc.signalingState !== "stable");
+
+      state.ignoreOffer = !state.polite && offerCollision;
+      if (state.ignoreOffer) return;
+
+      if (offerCollision) {
+        await Promise.all([
+          pc.setLocalDescription({ type: "rollback" }),
+          pc.setRemoteDescription(new RTCSessionDescription(data.sdp)),
+        ]);
       } else {
-        router.push("/");
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      }
+
+      if (data.sdp.type === "offer") {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        if (pc.localDescription) {
+          socketRef.current?.send(
+            JSON.stringify({
+              type: "signal",
+              to: from,
+              data: { sdp: pc.localDescription.toJSON() },
+            })
+          );
+        }
+      }
+    } else if (data.candidate) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } catch (err) {
+        if (!state.ignoreOffer) throw err;
       }
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
-    if (displayName) media.start();
-    return () => media.stopAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayName]);
+    if (!localStream) return;
 
-  useEffect(() => {
-    if (!media.localStream || !displayName) return;
+    // Toda vez que entra na sala, o chat começa zerado.
+    sessionStorage.removeItem(chatStorageKey);
+    setChatMessages([]);
 
-    const audioOnly = new MediaStream(media.localStream.getAudioTracks());
-    let intervalId: ReturnType<typeof setInterval>;
-    let currentRecorder: MediaRecorder | null = null;
+    const socket = new PartySocket({
+      host: process.env.NEXT_PUBLIC_PARTYKIT_HOST ?? "localhost:1999",
+      room: roomId,
+    });
+    socketRef.current = socket;
 
-    const recordAndSendChunk = () => {
-      const recorder = new MediaRecorder(audioOnly, { mimeType: "audio/webm" });
-      currentRecorder = recorder;
-      recorderRef.current = recorder;
+    socket.addEventListener("open", () => {
+      setConnected(true);
+      setLocalId(socket.id);
+      socket.send(JSON.stringify({ type: "join", name: displayName }));
+    });
 
-      const chunks: Blob[] = [];
+    socket.addEventListener("message", (event: MessageEvent<string>) => {
+      const msg = JSON.parse(event.data) as SignalMessage;
 
-      recorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        const audioBlob = new Blob(chunks, { type: "audio/webm" });
-        if (audioBlob.size > 0) {
-          sendTranscriptionChunk(roomId, displayName, audioBlob);
-        }
-      };
-
-      recorder.start();
-
-      setTimeout(() => {
-        if (recorder.state === "recording") {
-          recorder.stop();
-        }
-      }, CHUNK_INTERVAL_MS);
-    };
-
-    recordAndSendChunk();
-    intervalId = setInterval(recordAndSendChunk, CHUNK_INTERVAL_MS);
+      switch (msg.type) {
+        case "peers":
+          localIdRef.current = socket.id;
+          msg.peers.forEach((peer) => {
+            const initiator = socket.id < peer.id;
+            createPeerConnection(peer.id, peer.name, initiator);
+          });
+          break;
+        case "peer-joined":
+          createPeerConnection(msg.id, msg.name, false);
+          break;
+        case "peer-left":
+          peersRef.current.get(msg.id)?.pc.close();
+          peersRef.current.delete(msg.id);
+          cleanupPeer(msg.id);
+          break;
+        case "signal":
+          handleSignal(msg.from, msg.data);
+          break;
+        case "chat":
+          setChatMessages((prev) => [
+            ...prev,
+            { id: msg.id, from: msg.from, name: msg.name, text: msg.text, ts: msg.ts },
+          ]);
+          break;
+        case "room-closed":
+          setRoomClosed(true);
+          break;
+      }
+    });
 
     return () => {
-      clearInterval(intervalId);
-      if (currentRecorder && currentRecorder.state === "recording") {
-        currentRecorder.stop();
-      }
+      peersRef.current.forEach((state) => state.pc.close());
+      peersRef.current.clear();
+      cameraSendersRef.current.clear();
+      screenSendersRef.current.clear();
+      cameraStreamIdRef.current.clear();
+      socket.close();
     };
-  }, [media.localStream, displayName, roomId]);
+  }, [roomId, displayName, localStream, createPeerConnection, handleSignal, cleanupPeer, chatStorageKey]);
 
   useEffect(() => {
-    if (peers.roomClosed) setEnded(true);
-  }, [peers.roomClosed]);
+    if (chatMessages.length === 0) return;
+    sessionStorage.setItem(chatStorageKey, JSON.stringify(chatMessages));
+  }, [chatMessages, chatStorageKey]);
 
-  async function handleToggleScreenShare() {
-    if (media.isSharingScreen) {
-      media.stopScreenShare();
-      const camTrack = media.cameraTrack();
-      if (camTrack) peers.replaceVideoTrackForAll(camTrack);
-    } else {
-      const screenTrack = await media.startScreenShare();
-      if (screenTrack) {
-        peers.replaceVideoTrackForAll(screenTrack);
-        // Opcional: Se você começou a compartilhar, fixa automaticamente sua tela no destaque
-        setPinnedId("local");
+  const replaceCameraTrackForAll = useCallback((newTrack: MediaStreamTrack | null) => {
+    cameraSendersRef.current.forEach((sender) => {
+      sender.replaceTrack(newTrack);
+    });
+  }, []);
+
+  const addScreenTrackForAll = useCallback((track: MediaStreamTrack) => {
+    screenTrackRef.current = track;
+    const screenStream = new MediaStream([track]);
+    peersRef.current.forEach((state, peerId) => {
+      const sender = state.pc.addTrack(track, screenStream);
+      screenSendersRef.current.set(peerId, sender);
+    });
+  }, []);
+
+  const removeScreenTrackForAll = useCallback(() => {
+    screenTrackRef.current = null;
+    peersRef.current.forEach((state, peerId) => {
+      const sender = screenSendersRef.current.get(peerId);
+      if (sender) {
+        state.pc.removeTrack(sender);
+        screenSendersRef.current.delete(peerId);
       }
-    }
-  }
+    });
+  }, []);
 
-  async function handleLeave() {
-    peers.leaveRoom();
-    media.stopAll();
-    router.push("/");
-  }
+  const sendChatMessage = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    socketRef.current?.send(JSON.stringify({ type: "chat", text: trimmed }));
+  }, []);
 
-  async function handleEndForAll() {
-    const result = await finalizeRoom(roomId);
-    setDownloadUrl(result.downloadUrl);
-    setEnded(true);
-    peers.leaveRoom();
-    media.stopAll();
-  }
+  const leaveRoom = useCallback(() => {
+    socketRef.current?.send(JSON.stringify({ type: "leave" }));
+    socketRef.current?.close();
+  }, []);
 
-  if (ended) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
-        <Logo />
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-ink-900 dark:text-white">
-            A chamada terminou
-          </h1>
-          <p className="text-ink-500 dark:text-ink-400">
-            A sala foi apagada. {downloadUrl ? "A transcrição está pronta:" : "Nenhum áudio foi transcrito."}
-          </p>
-        </div>
-        {downloadUrl && (
-          <a
-            href={downloadUrl}
-            className="rounded-lg bg-primary-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-600"
-          >
-            Baixar transcrição (.docx)
-          </a>
-        )}
-        <a href="/" className="text-sm text-ink-400 underline hover:text-ink-600">
-          Voltar ao início
-        </a>
-      </main>
-    );
-  }
-
-  // Identifica quem está fixado no momento (se houver)
-  const pinnedParticipant = pinnedId && pinnedId !== "local" 
-    ? participants.find((p) => p.id === pinnedId) 
-    : null;
-
-  const isPinnedLocal = pinnedId === "local";
-  const hasPin = Boolean(pinnedId);
-
-  // Lista de quem vai para a galeria (todos exceto o fixado, caso haja um pin)
-  const galleryLocalShow = !hasPin || !isPinnedLocal;
-  const galleryRemoteList = participants.filter((p) => p.id !== pinnedId);
-
-  return (
-    <main className="flex min-h-screen flex-col px-6">
-      <header className="flex items-center justify-between py-4">
-        <Logo />
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-ink-400">
-            {peers.connected ? `${participants.length + 1} na sala` : "Conectando..."}
-          </span>
-          <ThemeToggle />
-        </div>
-      </header>
-
-      {/* LAYOUT DINÂMICO BASEADO NO PIN */}
-      <section
-        className={`flex-1 py-4 flex gap-4 ${
-          hasPin ? "flex-col lg:flex-row" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-        }`}
-      >
-        {/* ÁREA DE DESTAQUE (PRINCIPAL) */}
-        {hasPin && (
-          <div className="flex-1 bg-ink-900/5 dark:bg-ink-900/20 rounded-2xl overflow-hidden min-h-[50vh] lg:min-h-0 relative group">
-            {isPinnedLocal ? (
-              <div className="relative h-full w-full">
-                <VideoTile
-                  stream={media.localStream}
-                  name={`${displayName ?? "Você"} (Fixado)`}
-                  isLocal
-                  micOn={media.isMicOn}
-                  className="h-full w-full object-contain"
-                />
-                <button
-                  onClick={() => setPinnedId(null)}
-                  className="absolute top-3 right-3 bg-black/60 hover:bg-black text-white text-xs px-3 py-1.5 rounded-lg backdrop-blur-md transition"
-                >
-                  Desafixar 📌
-                </button>
-              </div>
-            ) : (
-              pinnedParticipant && (
-                <div className="relative h-full w-full">
-                  <VideoTile
-                    stream={pinnedParticipant.stream}
-                    name={`${pinnedParticipant.name} (Fixado)`}
-                    className="h-full w-full object-contain"
-                  />
-                  <button
-                    onClick={() => setPinnedId(null)}
-                    className="absolute top-3 right-3 bg-black/60 hover:bg-black text-white text-xs px-3 py-1.5 rounded-lg backdrop-blur-md transition"
-                  >
-                    Desafixar 📌
-                  </button>
-                </div>
-              )
-            )}
-          </div>
-        )}
-
-        {/* GALERIA LATERAL OU GRADE NORMAL */}
-        <div
-          className={
-            hasPin
-              ? "flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto lg:w-72 max-h-[25vh] lg:max-h-none shrink-0"
-              : "contents"
-          }
-        >
-          {galleryLocalShow && (
-            <div className="relative group shrink-0">
-              <VideoTile
-                stream={media.localStream}
-                name={displayName ?? "Você"}
-                isLocal
-                micOn={media.isMicOn}
-                className={hasPin ? "w-48 lg:w-full" : ""}
-              />
-              <button
-                onClick={() => setPinnedId("local")}
-                className="absolute top-2 right-2 bg-black/50 hover:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition"
-                title="Fixar na tela principal"
-              >
-                📌 Fixar
-              </button>
-            </div>
-          )}
-
-          {galleryRemoteList.map((p) => (
-            <div key={p.id} className="relative group shrink-0">
-              <VideoTile
-                stream={p.stream}
-                name={p.name}
-                className={hasPin ? "w-48 lg:w-full" : ""}
-              />
-              <button
-                onClick={() => setPinnedId(p.id)}
-                className="absolute top-2 right-2 bg-black/50 hover:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition"
-                title="Fixar na tela principal"
-              >
-                📌 Fixar
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="sticky bottom-6 flex justify-center pb-6">
-        <CallControls
-          isMicOn={media.isMicOn}
-          isCameraOn={media.isCameraOn}
-          isSharingScreen={media.isSharingScreen}
-          isHost={isHost}
-          onToggleMic={media.toggleMic}
-          onToggleCamera={media.toggleCamera}
-          onToggleScreenShare={handleToggleScreenShare}
-          onLeave={handleLeave}
-          onEndForAll={handleEndForAll}
-        />
-      </div>
-    </main>
-  );
+  return {
+    remoteParticipants,
+    connected,
+    roomClosed,
+    chatMessages,
+    localId,
+    replaceCameraTrackForAll,
+    addScreenTrackForAll,
+    removeScreenTrackForAll,
+    sendChatMessage,
+    leaveRoom,
+  };
 }

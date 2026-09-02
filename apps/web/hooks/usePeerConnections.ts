@@ -10,13 +10,22 @@ export type RemoteParticipant = {
   isSharingScreen?: boolean;
 };
 
+export type ChatMessage = {
+  id: string;
+  from: string;
+  name: string;
+  text: string;
+  ts: number;
+};
+
 type SignalMessage =
   | { type: "peers"; peers: { id: string; name: string }[] }
   | { type: "peer-joined"; id: string; name: string }
   | { type: "peer-left"; id: string }
   | { type: "signal"; from: string; data: any }
   | { type: "room-closed" }
-  | { type: "screen-state"; from: string; isSharing: boolean };
+  | { type: "screen-state"; from: string; isSharing: boolean }
+  | { type: "chat"; id: string; from: string; name: string; text: string; ts: number };
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -42,6 +51,10 @@ export function usePeerConnections(
   >({});
   const [connected, setConnected] = useState(false);
   const [roomClosed, setRoomClosed] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [localId, setLocalId] = useState("");
+
+  const chatStorageKey = `combogo-chat-${roomId}`;
 
   const socketRef = useRef<PartySocket | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -141,6 +154,9 @@ export function usePeerConnections(
   useEffect(() => {
     if (!localStream) return;
 
+    sessionStorage.removeItem(chatStorageKey);
+    setChatMessages([]);
+
     const socket = new PartySocket({
       host: process.env.NEXT_PUBLIC_PARTYKIT_HOST ?? "localhost:1999",
       room: roomId,
@@ -154,7 +170,7 @@ export function usePeerConnections(
     });
 
     socket.addEventListener("message", (event) => {
-      const msg: SignalMessage & { id?: string } = JSON.parse(event.data);
+      const msg = JSON.parse(event.data) as SignalMessage;
 
       switch (msg.type) {
         case "peers":
@@ -167,7 +183,7 @@ export function usePeerConnections(
         case "peer-joined":
           createPeerConnection(msg.id, msg.name, false);
           break;
-        case "peer-left": 
+        case "peer-left":
           peersRef.current.get(msg.id)?.close();
           peersRef.current.delete(msg.id);
           setRemoteParticipants((prev) => {
@@ -192,6 +208,18 @@ export function usePeerConnections(
             };
           });
           break;
+        case "chat":
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: msg.id,
+              from: msg.from,
+              name: msg.name,
+              text: msg.text,
+              ts: msg.ts,
+            }
+          ])
+          break;
       }
     });
 
@@ -201,6 +229,11 @@ export function usePeerConnections(
       socket.close();
     };
   }, [roomId, displayName, localStream, createPeerConnection, handleSignal]);
+
+  useEffect(() => {
+    if (chatMessages.length === 0) return;
+    sessionStorage.setItem(chatStorageKey, JSON.stringify(chatMessages));
+  }, [chatMessages, chatStorageKey]);
 
   const replaceVideoTrackForAll = useCallback((newTrack: MediaStreamTrack) => {
     peersRef.current.forEach((pc) => {
@@ -212,6 +245,12 @@ export function usePeerConnections(
   const leaveRoom = useCallback(() => {
     socketRef.current?.send(JSON.stringify({ type: "leave" }));
     socketRef.current?.close();
+  }, []);
+
+  const sendChatMessage = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    socketRef.current?.send(JSON.stringify({ type: "chat", text: trimmed }));
   }, []);
 
   const broadcastScreenState = useCallback((isSharing: boolean) => {
