@@ -12,6 +12,14 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_PARTYKIT_HOST: process.env.NEXT_PUBLIC_PARTYKIT_HOST,
   },
+  webpack: (config) => {
+    config.resolve.fallback = {
+      fs: false,
+      path: false,
+      os: false,
+    };
+    return config;
+  }
 };
 
 module.exports = withPWA(nextConfig);
