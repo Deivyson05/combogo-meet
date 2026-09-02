@@ -51,7 +51,7 @@ const ICE_SERVERS: RTCIceServer[] = [
   },
 ];
 
-export function usePeerConnections(
+export default function usePeerConnections(
   roomId: string,
   displayName: string,
   localStream: MediaStream | null
