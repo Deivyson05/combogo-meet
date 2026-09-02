@@ -27,6 +27,7 @@ export default function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <link rel="shortcut icon" href="/combogo-meet-icon.svg" />
       </head>
       <body>{children}</body>
     </html>

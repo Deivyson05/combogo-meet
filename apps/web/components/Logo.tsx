@@ -4,7 +4,7 @@ export function Logo({ className = "" }: { className?: string }) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <Image
-        src="/logo-combogo.svg"
+        src="/combogo-meet-icon.svg"
         alt="Combogó Unicap"
         width={140}
         height={53}
