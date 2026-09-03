@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+// Keep API requests same-origin in the browser; Next.js proxies them to the
+// configured backend so browser CORS policy does not depend on the deployment URL.
+const API_URL = "/api/backend";
 
 export async function createRoom(): Promise<{ roomId: string }> {
   const res = await fetch(`${API_URL}/rooms`, { method: "POST" });
