@@ -57,11 +57,6 @@ app.whenReady().then(() => {
         session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
             return permission === 'media' || permission === 'camera' || permission === 'microphone';
         });
-        session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-            desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-                callback({ video: sources[0] });
-            });
-        }, { useSystemPicker: false });
         createWindow()
     }, 5000) // espera 5 segundos para garantir que o servidor Next.js esteja pronto
     Menu.setApplicationMenu(null)
