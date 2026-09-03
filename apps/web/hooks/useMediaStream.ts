@@ -10,25 +10,45 @@ export function useMediaStream() {
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
+  const [audioInputId, setAudioInputId] = useState("");
+  const [videoInputId, setVideoInputId] = useState("");
 
   const rawStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const { applyNoiseSuppression, cleanup: cleanupNoise } = useNoiseSuppression();
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (devices?: { audioInputId?: string; videoInputId?: string }) => {
+    const selectedAudioId = devices?.audioInputId ?? audioInputId;
+    const selectedVideoId = devices?.videoInputId ?? videoInputId;
     const raw = await navigator.mediaDevices.getUserMedia({
       audio: {
+        ...(selectedAudioId ? { deviceId: { exact: selectedAudioId } } : {}),
         echoCancellation: true,
         autoGainControl: true,
         noiseSuppression: false, // desligamos a nativa: RNNoise cuida disso
       },
-      video: { width: 1280, height: 720, facingMode: "user" },
+      video: { width: 1280, height: 720, facingMode: "user", ...(selectedVideoId ? { deviceId: { exact: selectedVideoId } } : {}) },
     });
     rawStreamRef.current = raw;
 
     const cleaned = await applyNoiseSuppression(raw);
     setLocalStream(cleaned);
     return cleaned;
+  }, [applyNoiseSuppression, audioInputId, videoInputId]);
+
+  const changeDevices = useCallback(async (next: { audioInputId: string; videoInputId: string }) => {
+    const replacement = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: next.audioInputId ? { exact: next.audioInputId } : undefined, echoCancellation: true, autoGainControl: true, noiseSuppression: false },
+      video: { deviceId: next.videoInputId ? { exact: next.videoInputId } : undefined, width: 1280, height: 720 },
+    });
+    rawStreamRef.current?.getTracks().forEach((track) => track.stop());
+    rawStreamRef.current = replacement;
+    const cleaned = await applyNoiseSuppression(replacement);
+    setLocalStream(cleaned);
+    setAudioInputId(next.audioInputId);
+    setVideoInputId(next.videoInputId);
+    setIsMicOn(true);
+    setIsCameraOn(true);
   }, [applyNoiseSuppression]);
 
   const toggleMic = useCallback(() => {
@@ -62,7 +82,7 @@ export function useMediaStream() {
     }
 
     const fresh = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1280, height: 720, facingMode: "user" },
+      video: { width: 1280, height: 720, facingMode: "user", ...(videoInputId ? { deviceId: { exact: videoInputId } } : {}) },
     });
     const [newTrack] = fresh.getVideoTracks();
 
@@ -74,12 +94,12 @@ export function useMediaStream() {
 
     setIsCameraOn(true);
     return newTrack;
-  }, []);
+  }, [videoInputId]);
 
   /** Retorna a track de tela — usePeerConnections decide como enviá-la (addScreenTrackForAll). */
     /** Agora usando o repository para decidir se é web ou Electron */
-  const startScreenShare = useCallback(async (): Promise<MediaStreamTrack | null> => {
-    const screenStream = await getScreenStream(); // chama o repository
+  const startScreenShare = useCallback(async (sourceId?: string): Promise<MediaStreamTrack | null> => {
+    const screenStream = await getScreenStream(sourceId);
     screenStreamRef.current = screenStream;
     setLocalScreenStream(screenStream);
     setIsSharingScreen(true);
@@ -114,7 +134,10 @@ export function useMediaStream() {
     isMicOn,
     isCameraOn,
     isSharingScreen,
+    audioInputId,
+    videoInputId,
     start,
+    changeDevices,
     toggleMic,
     toggleCamera,
     startScreenShare,

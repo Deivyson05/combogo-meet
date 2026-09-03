@@ -20,7 +20,8 @@ const nextConfig = {
       child_process: false,
     };
     return config;
-  }
+  },
+  output: 'standalone',
 };
 
 module.exports = withPWA(nextConfig);

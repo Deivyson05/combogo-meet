@@ -1,31 +1,40 @@
-export async function getScreenStream(): Promise<MediaStream> {
-  // Fluxo Web (navegador)
-  if (navigator.mediaDevices?.getDisplayMedia) {
-    return await navigator.mediaDevices.getDisplayMedia({ video: true });
-  }
+export type DesktopSource = {
+  id: string;
+  name: string;
+  thumbnail?: string;
+};
 
-  // Fluxo Electron
-  if (typeof window !== "undefined" && (window as any).process?.type) {
-    // Import dinâmico para evitar erro em projetos com "type: module"
-    const electron = await import("electron");
-    const { desktopCapturer } = electron;
+type ElectronBridge = {
+  getDesktopSources?: () => Promise<DesktopSource[]>;
+};
 
-    const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+function getElectronBridge(): ElectronBridge | null {
+  if (typeof window === "undefined") return null;
+  return (window as Window & { electronAPI?: ElectronBridge }).electronAPI ?? null;
+}
 
-    // Aqui você pode criar uma UI para o usuário escolher a tela/janela
-    const selectedSource = sources[0];
+export async function getDesktopSources(): Promise<DesktopSource[]> {
+  const bridge = getElectronBridge();
+  if (!bridge?.getDesktopSources) return [];
+  return bridge.getDesktopSources();
+}
 
-    const stream = await navigator.mediaDevices.getUserMedia({
+export async function getScreenStream(sourceId?: string): Promise<MediaStream> {
+  if (sourceId) {
+    return navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
+        // Electron Chromium requires these non-standard constraints.
         mandatory: {
           chromeMediaSource: "desktop",
-          chromeMediaSourceId: selectedSource.id,
+          chromeMediaSourceId: sourceId,
         },
-      } as any, // "mandatory" não existe no tipo oficial, então usamos `as any`
+      } as MediaTrackConstraints,
     });
+  }
 
-    return stream;
+  if (navigator.mediaDevices?.getDisplayMedia) {
+    return navigator.mediaDevices.getDisplayMedia({ video: true });
   }
 
   throw new Error("Compartilhamento de tela não suportado neste ambiente");

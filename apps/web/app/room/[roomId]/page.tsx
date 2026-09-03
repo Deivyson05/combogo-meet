@@ -6,6 +6,8 @@ import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoTile } from "@/components/VideoTile";
 import { CallControls } from "@/components/CallControls";
+import { DesktopSourcePicker, MediaSettings } from "@/components/MediaSettings";
+import { getDesktopSources, DesktopSource } from "@/hooks/screenShareRepository";
 import { ChatPanel } from "@/components/ChatPanel";
 import { useMediaStream } from "@/hooks/useMediaStream";
 import { usePeerConnections } from "@/hooks/usePeerConnections";
@@ -30,6 +32,8 @@ export default function RoomPage() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [desktopSourcesOpen, setDesktopSourcesOpen] = useState(false);
 
   // ID do tile em destaque (ex: "local", "local-screen", peerId ou `${peerId}-screen`)
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -128,6 +132,11 @@ export default function RoomPage() {
       peers.removeScreenTrackForAll();
     } else {
       try {
+        const sources = await getDesktopSources();
+        if (sources.length > 0) {
+          setDesktopSourcesOpen(true);
+          return;
+        }
         const screenTrack = await media.startScreenShare();
         if (screenTrack) peers.addScreenTrackForAll(screenTrack);
       } catch (err) {
@@ -137,6 +146,17 @@ export default function RoomPage() {
             : "Não foi possível compartilhar a tela neste dispositivo."
         );
       }
+
+    }
+  }
+
+  async function handleDesktopSource(source: DesktopSource) {
+    setDesktopSourcesOpen(false);
+    try {
+      const screenTrack = await media.startScreenShare(source.id);
+      if (screenTrack) peers.addScreenTrackForAll(screenTrack);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Não foi possível compartilhar esta fonte.");
     }
   }
 
@@ -322,8 +342,18 @@ export default function RoomPage() {
           onToggleChat={handleToggleChat}
           onLeave={handleLeave}
           onEndForAll={handleEndForAll}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       </div>
+      {settingsOpen && (
+        <MediaSettings
+          audioInputId={media.audioInputId}
+          videoInputId={media.videoInputId}
+          onChange={media.changeDevices}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {desktopSourcesOpen && <DesktopSourcePicker onSelect={handleDesktopSource} onClose={() => setDesktopSourcesOpen(false)} />}
     </main>
   );
 }

@@ -9,6 +9,7 @@ import {
   ScreenShareOff,
   PhoneOff,
   MessageSquare,
+  Settings,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -25,6 +26,7 @@ export function CallControls({
   onToggleChat,
   onLeave,
   onEndForAll,
+  onOpenSettings,
 }: {
   isMicOn: boolean;
   isCameraOn: boolean;
@@ -38,6 +40,7 @@ export function CallControls({
   onToggleChat: () => void;
   onLeave: () => void;
   onEndForAll: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <div className="flex items-center justify-center gap-3 rounded-2xl border border-ink-100 bg-white/80 px-4 py-3 shadow-sm backdrop-blur dark:border-ink-800 dark:bg-ink-900/80">
@@ -47,6 +50,7 @@ export function CallControls({
         label={isMicOn ? "Silenciar microfone" : "Ativar microfone"}
         icon={isMicOn ? <Mic size={18} /> : <MicOff size={18} />}
       />
+      <ControlButton active={false} onClick={onOpenSettings} label="Configurações de câmera e microfone" icon={<Settings size={18} />} />
       <ControlButton
         active={isCameraOn}
         onClick={onToggleCamera}
