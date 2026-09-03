@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, session, desktopCapturer, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, session, desktopCapturer, clipboard, ipcMain } = require('electron');
 const path = require('path');
 const { fork } = require('child_process');
 
@@ -19,6 +19,13 @@ ipcMain.handle('get-screen-sources', async () => {
         name: s.name,
         thumbnail: s.thumbnail.toDataURL(),
     }));
+});
+
+ipcMain.handle('write-clipboard-text', (_event, text) => {
+    if (typeof text !== 'string') {
+        throw new TypeError('O texto para copiar deve ser uma string');
+    }
+    clipboard.writeText(text);
 });
 
 const createWindow = () => {

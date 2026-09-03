@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoTile } from "@/components/VideoTile";
 import { CallControls } from "@/components/CallControls";
 import { DesktopSourcePicker, MediaSettings } from "@/components/MediaSettings";
-import { getDesktopSources, DesktopSource } from "@/hooks/screenShareRepository";
+import { copyText, getDesktopSources, DesktopSource } from "@/hooks/screenShareRepository";
 import { ChatPanel } from "@/components/ChatPanel";
 import { useMediaStream } from "@/hooks/useMediaStream";
 import { usePeerConnections } from "@/hooks/usePeerConnections";
@@ -169,9 +169,13 @@ export default function RoomPage() {
   }
 
   async function handleCopyRoomId() {
-    await navigator.clipboard.writeText(roomId);
-    setRoomIdCopied(true);
-    window.setTimeout(() => setRoomIdCopied(false), 2000);
+    try {
+      await copyText(roomId);
+      setRoomIdCopied(true);
+      window.setTimeout(() => setRoomIdCopied(false), 2000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Não foi possível copiar o ID da chamada.");
+    }
   }
 
   async function handleEndForAll() {

@@ -1,4 +1,4 @@
-const { contextBridge, desktopCapturer } = require("electron");
+const { contextBridge, desktopCapturer, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   async getDesktopSources() {
@@ -11,5 +11,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
       name: source.name,
       thumbnail: source.thumbnail.toDataURL(),
     }));
+  },
+  writeClipboardText(text) {
+    return ipcRenderer.invoke("write-clipboard-text", text);
   },
 });

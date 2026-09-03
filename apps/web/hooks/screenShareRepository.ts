@@ -6,6 +6,7 @@ export type DesktopSource = {
 
 type ElectronBridge = {
   getDesktopSources?: () => Promise<DesktopSource[]>;
+  writeClipboardText?: (text: string) => Promise<void>;
 };
 
 function getElectronBridge(): ElectronBridge | null {
@@ -17,6 +18,20 @@ export async function getDesktopSources(): Promise<DesktopSource[]> {
   const bridge = getElectronBridge();
   if (!bridge?.getDesktopSources) return [];
   return bridge.getDesktopSources();
+}
+
+export async function copyText(text: string): Promise<void> {
+  const bridge = getElectronBridge();
+  if (bridge?.writeClipboardText) {
+    await bridge.writeClipboardText(text);
+    return;
+  }
+
+  if (!navigator.clipboard?.writeText) {
+    throw new Error("Não foi possível copiar o texto neste dispositivo.");
+  }
+
+  await navigator.clipboard.writeText(text);
 }
 
 export async function getScreenStream(sourceId?: string): Promise<MediaStream> {
