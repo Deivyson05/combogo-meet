@@ -12,6 +12,16 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_PARTYKIT_HOST: process.env.NEXT_PUBLIC_PARTYKIT_HOST,
   },
+  async rewrites() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+    return [
+      {
+        source: '/api/backend/:path*',
+        destination: `${apiUrl}/:path*`,
+      },
+    ];
+  },
   webpack: (config) => {
     config.resolve.fallback = {
       fs: false,
