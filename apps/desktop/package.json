@@ -8,12 +8,43 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "validate:resources": "node validate-resources.js",
+    "prebuild": "npm run validate:resources",
+    "build": "electron-builder",
+    "prebuild:dir": "npm run validate:resources",
+    "build:dir": "electron-builder --dir",
     "test": "echo \\\"Error: no test specified\\\" && exit 1"
   },
   "devDependencies": {
-    "electron": "^44.1.1"
+    "electron": "^44.1.1",
+    "electron-builder": "^26.0.12"
   },
   "dependencies": {
     "docx": "^9.7.1"
+  },
+  "build": {
+    "appId": "com.combogo.meet",
+    "productName": "Combogó Meet",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "public/combogo-meet-icon-app.ico"
+    }
   }
 }
