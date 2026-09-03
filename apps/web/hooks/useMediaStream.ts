@@ -39,9 +39,16 @@ export function useMediaStream() {
   const changeDevices = useCallback(async (next: { audioInputId: string; videoInputId: string }) => {
     const replacement = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: next.audioInputId ? { exact: next.audioInputId } : undefined, echoCancellation: true, autoGainControl: true, noiseSuppression: false },
-      video: { deviceId: next.videoInputId ? { exact: next.videoInputId } : undefined, width: 1280, height: 720 },
+      video: {
+        deviceId: next.videoInputId ? { exact: next.videoInputId } : undefined,
+        width: 1280,
+        height: 720,
+        facingMode: "user",
+      },
     });
+    const previousLocalStream = localStream;
     rawStreamRef.current?.getTracks().forEach((track) => track.stop());
+    previousLocalStream?.getTracks().forEach((track) => track.stop());
     rawStreamRef.current = replacement;
     const cleaned = await applyNoiseSuppression(replacement);
     setLocalStream(cleaned);
@@ -49,7 +56,7 @@ export function useMediaStream() {
     setVideoInputId(next.videoInputId);
     setIsMicOn(true);
     setIsCameraOn(true);
-  }, [applyNoiseSuppression]);
+  }, [applyNoiseSuppression, localStream]);
 
   const toggleMic = useCallback(() => {
     const track = rawStreamRef.current?.getAudioTracks()[0];

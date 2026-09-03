@@ -4,22 +4,6 @@ const { fork } = require('child_process');
 
 let nextProcess;
 
-const { systemPreferences } = require('electron');
-
-async function checkMicPermission() {
-    if (process.platform === 'darwin') {
-        const status = systemPreferences.getMediaAccessStatus('microphone');
-        if (status !== 'granted') {
-            const granted = await systemPreferences.askForMediaAccess('microphone');
-            return granted;
-        }
-        return true;
-    }
-    return true; // Windows/Linux não precisam desse passo
-}
-
-
-
 function startNextServer() {
     const serverPath = path.join(__dirname, 'resources', '.next', 'standalone', 'server.js');
     nextProcess = fork(serverPath, [], {
@@ -43,8 +27,9 @@ const createWindow = () => {
         height: 600,
         icon: path.join(__dirname, 'public', 'combogo-meet-icon.ico'),
         webPreferences: {
-            nodeIntegration: true, // permite usar require/import direto
-            contextIsolation: false // facilita integração com Electron APIs
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true
         }
     });
 
@@ -59,11 +44,17 @@ const createWindow = () => {
 app.whenReady().then(() => {
     startNextServer()
     setTimeout(() => {
+        session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+            callback(permission === 'media' || permission === 'camera' || permission === 'microphone');
+        });
+        session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+            return permission === 'media' || permission === 'camera' || permission === 'microphone';
+        });
         session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
             desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-                callback({ video: sources[0] }); // ou abra um seletor de UI aqui
+                callback({ video: sources[0] });
             });
-        }, { useSystemPicker: true});
+        }, { useSystemPicker: false });
         createWindow()
     }, 5000) // espera 5 segundos para garantir que o servidor Next.js esteja pronto
     Menu.setApplicationMenu(null)
