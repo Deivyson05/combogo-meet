@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Check, Copy } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoTile } from "@/components/VideoTile";
@@ -34,6 +35,7 @@ export default function RoomPage() {
   const [ended, setEnded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [desktopSourcesOpen, setDesktopSourcesOpen] = useState(false);
+  const [roomIdCopied, setRoomIdCopied] = useState(false);
 
   // ID do tile em destaque (ex: "local", "local-screen", peerId ou `${peerId}-screen`)
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -166,6 +168,12 @@ export default function RoomPage() {
     router.push("/");
   }
 
+  async function handleCopyRoomId() {
+    await navigator.clipboard.writeText(roomId);
+    setRoomIdCopied(true);
+    window.setTimeout(() => setRoomIdCopied(false), 2000);
+  }
+
   async function handleEndForAll() {
     const result = await finalizeRoom(roomId);
     setDownloadUrl(result.downloadUrl);
@@ -260,6 +268,14 @@ export default function RoomPage() {
           <span className="text-xs text-ink-400">
             {peers.connected ? `${participants.length + 1} na sala` : "Conectando..."}
           </span>
+          <button
+            onClick={handleCopyRoomId}
+            className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs text-ink-600 transition-colors hover:bg-ink-50 dark:border-ink-700 dark:text-ink-300 dark:hover:bg-ink-800"
+            title="Copiar ID da chamada"
+          >
+            {roomIdCopied ? <Check size={14} /> : <Copy size={14} />}
+            {roomIdCopied ? "Copiado" : "Copiar ID"}
+          </button>
           <ThemeToggle />
         </div>
       </header>
