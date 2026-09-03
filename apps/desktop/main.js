@@ -25,7 +25,7 @@ const createWindow = () => {
     const win = new BrowserWindow({
         width: 800,
         height: 600,
-        icon: path.join(__dirname, 'public', 'combogo-meet-icon.ico'),
+        icon: path.join(__dirname, 'public', 'combogo-meet-icon-app.ico'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
