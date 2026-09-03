@@ -8,7 +8,13 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoTile } from "@/components/VideoTile";
 import { CallControls } from "@/components/CallControls";
 import { DesktopSourcePicker, MediaSettings } from "@/components/MediaSettings";
-import { copyText, getDesktopSources, DesktopSource } from "@/hooks/screenShareRepository";
+import {
+  copyText,
+  finalizeLocalTranscript,
+  getDesktopSources,
+  DesktopSource,
+  isElectronDesktop,
+} from "@/hooks/screenShareRepository";
 import { ChatPanel } from "@/components/ChatPanel";
 import { useMediaStream } from "@/hooks/useMediaStream";
 import { usePeerConnections } from "@/hooks/usePeerConnections";
@@ -179,8 +185,14 @@ export default function RoomPage() {
   }
 
   async function handleEndForAll() {
+    const desktop = isElectronDesktop();
+    if (desktop) {
+      await finalizeLocalTranscript(roomId);
+    }
+    // The backend still closes the room; in Electron it simply has no
+    // transcript chunks because those were handled locally.
     const result = await finalizeRoom(roomId);
-    setDownloadUrl(result.downloadUrl);
+    if (!desktop) setDownloadUrl(result.downloadUrl);
     setEnded(true);
     peers.leaveRoom();
     media.stopAll();

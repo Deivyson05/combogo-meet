@@ -1,3 +1,5 @@
+import { transcribeChunkInDesktop } from "@/hooks/screenShareRepository";
+
 // Keep API requests same-origin in the browser; Next.js proxies them to the
 // configured backend so browser CORS policy does not depend on the deployment URL.
 const API_URL = "/api/backend";
@@ -20,6 +22,8 @@ export async function sendTranscriptionChunk(
   speakerName: string,
   audioBlob: Blob
 ): Promise<void> {
+  if (await transcribeChunkInDesktop(roomId, speakerName, audioBlob)) return;
+
   const form = new FormData();
   form.append("roomId", roomId);
   form.append("speakerName", speakerName);

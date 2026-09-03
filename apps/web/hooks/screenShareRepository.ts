@@ -5,13 +5,44 @@ export type DesktopSource = {
 };
 
 type ElectronBridge = {
+  isElectron?: boolean;
   getDesktopSources?: () => Promise<DesktopSource[]>;
   writeClipboardText?: (text: string) => Promise<void>;
+  transcribeChunk?: (
+    roomId: string,
+    speakerName: string,
+    audioBuffer: ArrayBuffer
+  ) => Promise<void>;
+  finalizeLocal?: (roomId: string) => Promise<{ saved: boolean; path?: string }>;
 };
 
 function getElectronBridge(): ElectronBridge | null {
   if (typeof window === "undefined") return null;
   return (window as Window & { electronAPI?: ElectronBridge }).electronAPI ?? null;
+}
+
+export function isElectronDesktop(): boolean {
+  return Boolean(getElectronBridge()?.isElectron);
+}
+
+export async function transcribeChunkInDesktop(
+  roomId: string,
+  speakerName: string,
+  audioBlob: Blob
+): Promise<boolean> {
+  const bridge = getElectronBridge();
+  if (!bridge?.transcribeChunk) return false;
+
+  await bridge.transcribeChunk(roomId, speakerName, await audioBlob.arrayBuffer());
+  return true;
+}
+
+export async function finalizeLocalTranscript(
+  roomId: string
+): Promise<{ saved: boolean; path?: string } | null> {
+  const bridge = getElectronBridge();
+  if (!bridge?.finalizeLocal) return null;
+  return bridge.finalizeLocal(roomId);
 }
 
 export async function getDesktopSources(): Promise<DesktopSource[]> {
