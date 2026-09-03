@@ -1,0 +1,14 @@
+{
+  "name": "combogo-meet-signaling",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "partykit dev",
+    "deploy": "partykit deploy"
+  },
+  "dependencies": {
+    "partykit": "^0.0.115"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

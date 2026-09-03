@@ -1,0 +1,9 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "combogo-meet-signaling",
+  "main": "src/room.ts",
+  "compatibilityDate": "2024-07-01",
+  "vars": {
+    "API_FINALIZE_URL": "https://combogo-meet-api.vercel.app/rooms/finalize-webhook"
+  }
+}
