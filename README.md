@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./banner.jpg" alt="Combogó Flow" width="100%"/>
+</p>
+
 # Combogó Meet
 
 Salas de videochamada temporárias, sem conta, com supressão de ruído (RNNoise) e
