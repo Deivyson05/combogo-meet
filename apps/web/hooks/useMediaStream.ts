@@ -33,6 +33,8 @@ export function useMediaStream() {
 
     const cleaned = await applyNoiseSuppression(raw);
     setLocalStream(cleaned);
+    toggleCamera();
+    toggleMic();
     return cleaned;
   }, [applyNoiseSuppression, audioInputId, videoInputId]);
 
@@ -54,8 +56,8 @@ export function useMediaStream() {
     setLocalStream(cleaned);
     setAudioInputId(next.audioInputId);
     setVideoInputId(next.videoInputId);
-    setIsMicOn(false);
-    setIsCameraOn(false);
+    setIsMicOn(true);
+    setIsCameraOn(true);
   }, [applyNoiseSuppression, localStream]);
 
   const toggleMic = useCallback(() => {
