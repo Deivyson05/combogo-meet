@@ -176,7 +176,7 @@ export default function RoomPage() {
 
   async function handleCopyRoomId() {
     try {
-      await copyText(roomId);
+      await copyText(`https://combogo-meet.vercel.app/room/roomId`);
       setRoomIdCopied(true);
       window.setTimeout(() => setRoomIdCopied(false), 2000);
     } catch (err) {
@@ -287,10 +287,10 @@ export default function RoomPage() {
           <button
             onClick={handleCopyRoomId}
             className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs text-ink-600 transition-colors hover:bg-ink-50 dark:border-ink-700 dark:text-ink-300 dark:hover:bg-ink-800"
-            title="Copiar ID da chamada"
+            title="Copiar URL da chamada"
           >
             {roomIdCopied ? <Check size={14} /> : <Copy size={14} />}
-            {roomIdCopied ? "Copiado" : "Copiar ID"}
+            {roomIdCopied ? "Copiado" : "Copiar URL"}
           </button>
           <ThemeToggle />
         </div>
