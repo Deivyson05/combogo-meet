@@ -32,9 +32,9 @@ export function useMediaStream() {
     rawStreamRef.current = raw;
 
     const cleaned = await applyNoiseSuppression(raw);
-    setLocalStream(cleaned);
     toggleCamera();
     toggleMic();
+    setLocalStream(cleaned);
     return cleaned;
   }, [applyNoiseSuppression, audioInputId, videoInputId]);
 
