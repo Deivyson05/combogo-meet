@@ -176,7 +176,7 @@ export default function RoomPage() {
 
   async function handleCopyRoomId() {
     try {
-      await copyText(`https://combogo-meet.vercel.app/room/roomId`);
+      await copyText(`https://combogo-meet.vercel.app/room/${roomId}`);
       setRoomIdCopied(true);
       window.setTimeout(() => setRoomIdCopied(false), 2000);
     } catch (err) {
