@@ -30,7 +30,7 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex h-full w-140 shrink-0 flex-col rounded-xl2 border border-ink-100 bg-white dark:border-ink-800 dark:bg-ink-900 fixed left-6">
+    <div className="flex h-400 w-200 shrink-0 flex-col rounded-xl2 border border-ink-100 bg-white dark:border-ink-800 dark:bg-ink-900 fixed right-6">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3 dark:border-ink-800">
         <span className="text-sm font-medium text-ink-900 dark:text-white">Chat da chamada</span>
         <button onClick={onClose} aria-label="Fechar chat" className="text-ink-400 hover:text-ink-600">
