@@ -17,23 +17,27 @@ export function useMediaStream() {
   const screenStreamRef = useRef<MediaStream | null>(null);
   const { applyNoiseSuppression, cleanup: cleanupNoise } = useNoiseSuppression();
 
-  const start = useCallback(async (devices?: { audioInputId?: string; videoInputId?: string }) => {
+  const start = useCallback(async (devices?: { audioInputId?: string; videoInputId?: string }, opts?: { cameraInitiallyOn?: boolean }) => {
     const selectedAudioId = devices?.audioInputId ?? audioInputId;
     const selectedVideoId = devices?.videoInputId ?? videoInputId;
+    const cameraOn = opts?.cameraInitiallyOn ?? false;
+
     const raw = await navigator.mediaDevices.getUserMedia({
       audio: {
         ...(selectedAudioId ? { deviceId: { exact: selectedAudioId } } : {}),
         echoCancellation: true,
         autoGainControl: true,
-        noiseSuppression: false, // desligamos a nativa: RNNoise cuida disso
+        noiseSuppression: false,
       },
-      video: { width: 1280, height: 720, facingMode: "user", ...(selectedVideoId ? { deviceId: { exact: selectedVideoId } } : {}) },
+      video: cameraOn
+        ? { width: 1280, height: 720, facingMode: "user", ...(selectedVideoId ? { deviceId: { exact: selectedVideoId } } : {}) }
+        : false,
     });
     rawStreamRef.current = raw;
+    setIsMicOn(true);
+    setIsCameraOn(cameraOn);
 
     const cleaned = await applyNoiseSuppression(raw);
-    toggleCamera();
-    toggleMic();
     setLocalStream(cleaned);
     return cleaned;
   }, [applyNoiseSuppression, audioInputId, videoInputId]);
