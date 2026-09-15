@@ -295,8 +295,23 @@ export function usePeerConnections(
   }, [chatMessages, chatStorageKey]);
 
   const replaceCameraTrackForAll = useCallback((newTrack: MediaStreamTrack | null) => {
-    cameraSendersRef.current.forEach((sender) => {
-      sender.replaceTrack(newTrack);
+    peersRef.current.forEach((state, peerId) => {
+      const existingSender = cameraSendersRef.current.get(peerId);
+
+      if (existingSender) {
+        // já existe m-line de vídeo pra esse peer: só troca a track
+        existingSender.replaceTrack(newTrack);
+        return;
+      }
+
+      if (newTrack) {
+        // primeira vez que esse peer recebe vídeo: precisa de addTrack,
+        // que dispara onnegotiationneeded e renegocia sozinho
+        const stream = new MediaStream([newTrack]);
+        const sender = state.pc.addTrack(newTrack, stream);
+        cameraSendersRef.current.set(peerId, sender);
+      }
+      // newTrack === null e não existia sender: não tem o que fazer
     });
   }, []);
 
