@@ -21,7 +21,7 @@ export function VideoTile({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
+    if (videoRef.current) {
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
@@ -30,15 +30,16 @@ export function VideoTile({
 
   return (
     <div className={`relative aspect-video overflow-hidden rounded-xl2 bg-ink-900 ${className}`}>
-      {stream && hasVideo ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={isLocal}
-          className={`h-full w-full object-cover ${isLocal ? "-scale-x-100" : ""}`}
-        />
-      ) : (
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={isLocal}
+        className={`h-full w-full object-cover ${isLocal ? "-scale-x-100" : ""} ${
+          hasVideo ? "" : "hidden"
+        }`}
+      />
+      {!hasVideo && (
         <div className="flex h-full w-full items-center justify-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-500/20 text-lg font-medium text-primary-300">
             {name.slice(0, 1).toUpperCase()}
