@@ -7,8 +7,8 @@ import { getScreenStream } from "./screenShareRepository";
 export function useMediaStream() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isCameraOn, setIsCameraOn] = useState(true);
+  const [isMicOn, setIsMicOn] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
   const [audioInputId, setAudioInputId] = useState("");
   const [videoInputId, setVideoInputId] = useState("");
@@ -54,8 +54,8 @@ export function useMediaStream() {
     setLocalStream(cleaned);
     setAudioInputId(next.audioInputId);
     setVideoInputId(next.videoInputId);
-    setIsMicOn(true);
-    setIsCameraOn(true);
+    setIsMicOn(false);
+    setIsCameraOn(false);
   }, [applyNoiseSuppression, localStream]);
 
   const toggleMic = useCallback(() => {
