@@ -1,12 +1,14 @@
 const { app, BrowserWindow, Menu, session, desktopCapturer, clipboard, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const { fork, spawn } = require('child_process');
 const { Document, Packer, Paragraph, HeadingLevel, TextRun } = require('docx');
 
 let nextProcess;
 let whisperProcess = null;
 const WHISPER_PORT = 8756;
+const NEXT_PORT = 3000;
 
 // roomId -> [{ speakerName, text, timestamp }]
 const localTranscripts = new Map();
@@ -26,8 +28,26 @@ function nextServerPath() {
     return path.join(resourceBaseDir(), '.next', 'standalone', 'server.js');
 }
 
+// No Mac/Linux, binários dentro de extraResources podem perder a flag de
+// executável dependendo de como o pacote foi gerado/transferido. Garantimos
+// a permissão em runtime, antes de tentar rodar o processo.
+function ensureExecutable(binPath) {
+    if (process.platform === 'win32') return;
+    try {
+        fsSync.chmodSync(binPath, 0o755);
+    } catch (err) {
+        console.error(`[permissions] não foi possível ajustar permissão de ${binPath}`, err);
+    }
+}
+
 function startWhisperServer() {
-    whisperProcess = spawn(whisperBinaryPath(), ['--port', String(WHISPER_PORT)]);
+    const binPath = whisperBinaryPath();
+    ensureExecutable(binPath);
+
+    whisperProcess = spawn(binPath, ['--port', String(WHISPER_PORT)]);
+    whisperProcess.on('error', (err) => {
+        console.error('[whisper] falha ao iniciar processo', err);
+    });
     whisperProcess.stdout?.on('data', (d) => console.log(`[whisper] ${d}`));
     whisperProcess.stderr?.on('data', (d) => console.error(`[whisper] ${d}`));
     whisperProcess.on('exit', (code) => console.log(`[whisper] processo encerrou (code ${code})`));
@@ -35,7 +55,10 @@ function startWhisperServer() {
 
 function startNextServer() {
     nextProcess = fork(nextServerPath(), [], {
-        env: { ...process.env, PORT: 3000, NODE_ENV: 'production' },
+        env: { ...process.env, PORT: NEXT_PORT, NODE_ENV: 'production' },
+    });
+    nextProcess.on('error', (err) => {
+        console.error('[next] falha ao iniciar processo', err);
     });
 }
 
@@ -155,18 +178,25 @@ ipcMain.handle('finalize-local', async (_event, roomId) => {
 });
 
 const createWindow = () => {
-    const win = new BrowserWindow({
+    const windowOptions = {
         width: 800,
         height: 600,
-        icon: path.join(__dirname, 'public', 'combogo-meet-icon-app.ico'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
         },
-    });
+    };
 
-    win.loadURL('http://localhost:3000/');
+    // No Windows, "icon" no BrowserWindow define o ícone da janela/taskbar.
+    // No Mac isso é ignorado (o ícone do dock vem do bundle .app, configurado
+    // em build.mac.icon no package.json), então só setamos no Windows.
+    if (process.platform === 'win32') {
+        windowOptions.icon = path.join(__dirname, 'public', 'combogo-meet-icon-app.ico');
+    }
+
+    const win = new BrowserWindow(windowOptions);
+    win.loadURL(`http://localhost:${NEXT_PORT}/`);
 };
 
 app.whenReady().then(async () => {
@@ -188,8 +218,22 @@ app.whenReady().then(async () => {
         { useSystemPicker: true }
     );
 
-    await waitUntilReady('http://localhost:3000/');
-    await waitUntilReady(`http://127.0.0.1:${WHISPER_PORT}/health`);
+    const nextOk = await waitUntilReady(`http://localhost:${NEXT_PORT}/`);
+    if (!nextOk) {
+        dialog.showErrorBox(
+            'Erro ao iniciar',
+            'Não foi possível iniciar o servidor local (Next.js). O app será encerrado.'
+        );
+        app.quit();
+        return;
+    }
+
+    const whisperOk = await waitUntilReady(`http://127.0.0.1:${WHISPER_PORT}/health`);
+    if (!whisperOk) {
+        // Não travamos o app por causa do whisper: a transcrição fica indisponível,
+        // mas o resto do app (chamada, etc.) continua funcionando.
+        console.error('[whisper] servidor de transcrição não respondeu a tempo, seguindo sem ele');
+    }
 
     Menu.setApplicationMenu(null);
     createWindow();

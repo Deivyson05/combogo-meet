@@ -25,6 +25,13 @@
   "build": {
     "appId": "com.combogo.meet",
     "productName": "Combogó Meet",
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "public/combogo-meet-icon-app.icns"
+    },
     "directories": {
       "output": "dist"
     },
