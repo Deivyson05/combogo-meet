@@ -23,12 +23,17 @@
            │
            ▼
    WebRTC P2P (mesh) entre os navegadores
-   ├─ áudio (com RNNoise aplicado antes de enviar)
+   ├─ áudio capturado localmente e enviado diretamente aos participantes
+   │  (a supressão de ruído é opcional; se o AudioWorklet falhar, usa a track original)
    ├─ vídeo (webcam)
    └─ compartilhamento de tela (getDisplayMedia)
    usando STUN público + TURN (Open Relay / Cloudflare Calls) quando o P2P
    direto não é possível (redes com NAT simétrico/firewall corporativo)
 ```
+
+O PartyKit troca apenas sinalização (SDP/ICE) e presença; o webhook dele
+finaliza a sala na API e não transporta áudio da chamada. Os chunks enviados
+à API são usados exclusivamente para transcrição.
 
 ## Por que mesh P2P (e não SFU)
 

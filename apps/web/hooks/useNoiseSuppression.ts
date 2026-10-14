@@ -15,25 +15,36 @@ export function useNoiseSuppression() {
       const audioTrack = inputStream.getAudioTracks()[0];
       if (!audioTrack) return inputStream;
 
-      const audioContext = new AudioContext({ sampleRate: 48000 });
-      audioContextRef.current = audioContext;
+      let audioContext: AudioContext | null = null;
+      try {
+        audioContext = new AudioContext({ sampleRate: 48000 });
+        audioContextRef.current = audioContext;
+        if (audioContext.state !== "running") {
+          throw new Error("O contexto de áudio não iniciou");
+        }
 
-      await audioContext.audioWorklet.addModule("/worklets/rnnoise-processor.bundle.js");
+        await audioContext.audioWorklet.addModule("/worklets/rnnoise-processor.bundle.js");
 
-      const source = audioContext.createMediaStreamSource(
-        new MediaStream([audioTrack])
-      );
-      const rnnoiseNode = new AudioWorkletNode(audioContext, "rnnoise-processor");
-      const destination = audioContext.createMediaStreamDestination();
+        const source = audioContext.createMediaStreamSource(
+          new MediaStream([audioTrack])
+        );
+        const rnnoiseNode = new AudioWorkletNode(audioContext, "rnnoise-processor");
+        const destination = audioContext.createMediaStreamDestination();
 
-      source.connect(rnnoiseNode).connect(destination);
+        source.connect(rnnoiseNode).connect(destination);
 
-      const cleanedStream = new MediaStream([
-        ...destination.stream.getAudioTracks(),
-        ...inputStream.getVideoTracks(),
-      ]);
-
-      return cleanedStream;
+        return new MediaStream([
+          ...destination.stream.getAudioTracks(),
+          ...inputStream.getVideoTracks(),
+        ]);
+      } catch (error) {
+        if (audioContext) {
+          if (audioContextRef.current === audioContext) audioContextRef.current = null;
+          void audioContext.close().catch(() => undefined);
+        }
+        console.warn("Supressão de ruído indisponível; usando o áudio original", error);
+        return inputStream;
+      }
     },
     []
   );

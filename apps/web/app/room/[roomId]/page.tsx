@@ -30,6 +30,21 @@ type Tile = {
   isPresentation?: boolean;
 };
 
+function getMediaErrorMessage(error: unknown) {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+      return "O acesso ao microfone foi bloqueado. Libere a permissão do microfone e tente novamente.";
+    }
+    if (error.name === "NotFoundError") {
+      return "Nenhum microfone foi encontrado neste dispositivo.";
+    }
+    if (error.name === "NotReadableError" || error.name === "AbortError") {
+      return "Não foi possível abrir o microfone. Verifique se outro aplicativo está usando o dispositivo.";
+    }
+  }
+  return "Não foi possível acessar o microfone. Verifique as permissões e tente novamente.";
+}
+
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const router = useRouter();
@@ -42,6 +57,7 @@ export default function RoomPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [desktopSourcesOpen, setDesktopSourcesOpen] = useState(false);
   const [roomIdCopied, setRoomIdCopied] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   // ID do tile em destaque (ex: "local", "local-screen", peerId ou `${peerId}-screen`)
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -85,10 +101,28 @@ export default function RoomPage() {
   }, [router]);
 
   useEffect(() => {
-    if (displayName) media.start();
-    return () => media.stopAll();
+    if (!displayName) return;
+    let cancelled = false;
+    media.start().then(() => {
+      if (!cancelled) setMediaError(null);
+    }).catch((error: unknown) => {
+      if (!cancelled) setMediaError(getMediaErrorMessage(error));
+    });
+    return () => {
+      cancelled = true;
+      media.stopAll();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayName]);
+
+  async function retryMedia() {
+    setMediaError(null);
+    try {
+      await media.start();
+    } catch (error) {
+      setMediaError(getMediaErrorMessage(error));
+    }
+  }
 
   useEffect(() => {
     if (!media.localStream || !displayName) return;
@@ -295,6 +329,15 @@ export default function RoomPage() {
           <ThemeToggle />
         </div>
       </header>
+
+      {mediaError && (
+        <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+          <span>{mediaError}</span>
+          <button onClick={retryMedia} className="font-semibold underline underline-offset-2">
+            Tentar novamente
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 gap-4 overflow-hidden">
         {/* LAYOUT DINÂMICO BASEADO NO PIN */}
