@@ -35,6 +35,7 @@ type PeerState = {
   polite: boolean;
   makingOffer: boolean;
   ignoreOffer: boolean;
+  pendingCandidates: RTCIceCandidateInit[];
 };
 
 const ICE_SERVERS: RTCIceServer[] = [
@@ -86,8 +87,17 @@ export function usePeerConnections(
 
   const createPeerConnection = useCallback(
     (peerId: string, peerName: string, initiator: boolean) => {
+      const existing = peersRef.current.get(peerId);
+      if (existing) return existing.pc;
+
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      const state: PeerState = { pc, polite: !initiator, makingOffer: false, ignoreOffer: false };
+      const state: PeerState = {
+        pc,
+        polite: !initiator,
+        makingOffer: false,
+        ignoreOffer: false,
+        pendingCandidates: [],
+      };
 
       localStream?.getTracks().forEach((track) => {
         const sender = pc.addTrack(track, localStream);
@@ -193,7 +203,10 @@ export function usePeerConnections(
         (state.makingOffer || pc.signalingState !== "stable");
 
       state.ignoreOffer = !state.polite && offerCollision;
-      if (state.ignoreOffer) return;
+      if (state.ignoreOffer) {
+        state.pendingCandidates = [];
+        return;
+      }
 
       if (offerCollision) {
         await Promise.all([
@@ -202,6 +215,16 @@ export function usePeerConnections(
         ]);
       } else {
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      }
+
+      for (const candidate of state.pendingCandidates.splice(0)) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          if (!state.ignoreOffer) {
+            console.error("Falha ao aplicar candidato ICE pendente", err);
+          }
+        }
       }
 
       if (data.sdp.type === "offer") {
@@ -217,11 +240,15 @@ export function usePeerConnections(
           );
         }
       }
-    } else if (data.candidate) {
+    } else if (data.candidate && !state.ignoreOffer) {
+      if (!pc.remoteDescription) {
+        state.pendingCandidates.push(data.candidate);
+        return;
+      }
       try {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       } catch (err) {
-        if (!state.ignoreOffer) throw err;
+        console.error("Falha ao aplicar candidato ICE", err);
       }
     }
   }, []);
@@ -257,7 +284,7 @@ export function usePeerConnections(
           });
           break;
         case "peer-joined":
-          createPeerConnection(msg.id, msg.name, false);
+          createPeerConnection(msg.id, msg.name, socket.id < msg.id);
           break;
         case "peer-left":
           peersRef.current.get(msg.id)?.pc.close();
@@ -265,7 +292,9 @@ export function usePeerConnections(
           cleanupPeer(msg.id);
           break;
         case "signal":
-          handleSignal(msg.from, msg.data);
+          void handleSignal(msg.from, msg.data).catch((err: unknown) => {
+            console.error("Falha ao processar sinalização WebRTC", err);
+          });
           break;
         case "chat":
           setChatMessages((prev) => [

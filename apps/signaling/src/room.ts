@@ -24,16 +24,19 @@ export default class RoomServer implements Party.Server {
 
     switch (msg.type) {
       case "join": {
+        const isNewParticipant = !this.names.has(sender.id);
         this.names.set(sender.id, msg.name);
         const peers = [...this.names.entries()]
           .filter(([id]) => id !== sender.id)
           .map(([id, name]) => ({ id, name }));
         sender.send(JSON.stringify({ type: "peers", peers }));
-        this.broadcastExcept(sender.id, {
-          type: "peer-joined",
-          id: sender.id,
-          name: msg.name,
-        });
+        if (isNewParticipant) {
+          this.broadcastExcept(sender.id, {
+            type: "peer-joined",
+            id: sender.id,
+            name: msg.name,
+          });
+        }
         break;
       }
 
@@ -77,7 +80,7 @@ export default class RoomServer implements Party.Server {
   }
 
   private handleDeparture(id: string) {
-    this.names.delete(id);
+    if (!this.names.delete(id)) return;
     this.broadcastExcept(id, { type: "peer-left", id });
     if (this.names.size === 0) {
       this.notifyApiRoomClosed();
