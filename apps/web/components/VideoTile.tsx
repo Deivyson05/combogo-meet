@@ -29,7 +29,7 @@ export function VideoTile({
   const hasVideo = !!stream?.getVideoTracks().find((t) => t.enabled);
 
   return (
-    <div className={`relative aspect-video overflow-hidden rounded-xl2 bg-ink-900 ${className}`}>
+    <div className={`relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-[#191a1b] ${className}`}>
       <video
         ref={videoRef}
         autoPlay
@@ -41,13 +41,13 @@ export function VideoTile({
       />
       {!hasVideo && (
         <div className="flex h-full w-full items-center justify-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-500/20 text-lg font-medium text-primary-300">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-primary-300/20 bg-primary-500/15 text-lg font-semibold text-primary-300">
             {name.slice(0, 1).toUpperCase()}
           </div>
         </div>
       )}
 
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/50 px-2 py-1 text-xs text-white backdrop-blur-sm">
+      <div className="absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-md border border-white/10 bg-black/65 px-2.5 py-1.5 text-xs text-white backdrop-blur-sm">
         {!micOn && <MicOff size={12} className="text-red-400" />}
         <span>{isLocal ? `${name} (você)` : name}</span>
       </div>

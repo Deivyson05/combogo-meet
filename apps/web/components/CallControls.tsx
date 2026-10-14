@@ -43,7 +43,7 @@ export function CallControls({
   onOpenSettings: () => void;
 }) {
   return (
-    <div className="flex items-center justify-center gap-3 rounded-2xl border border-ink-100 bg-white/80 px-4 py-3 shadow-sm backdrop-blur dark:border-ink-800 dark:bg-ink-900/80">
+    <div className="flex max-w-full flex-wrap items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#1b1c1d]/95 px-3 py-2.5 shadow-2xl shadow-black/30 backdrop-blur sm:gap-3 sm:px-4">
       <ControlButton
         active={isMicOn}
         onClick={onToggleMic}
@@ -78,12 +78,12 @@ export function CallControls({
         )}
       </div>
 
-      <div className="mx-1 h-6 w-px bg-ink-200 dark:bg-ink-700" />
+      <div className="mx-1 hidden h-6 w-px bg-white/15 sm:block" />
 
       <button
         onClick={onLeave}
         aria-label="Sair da chamada"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
+        className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-600 text-white transition-colors hover:bg-red-500"
       >
         <PhoneOff size={18} />
       </button>
@@ -91,7 +91,7 @@ export function CallControls({
       {isHost && (
         <button
           onClick={onEndForAll}
-          className="ml-1 rounded-full border border-red-200 px-3 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+          className="ml-1 rounded-lg border border-red-400/30 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/10"
         >
           Encerrar para todos
         </button>
@@ -117,10 +117,10 @@ function ControlButton({
       aria-label={label}
       title={label}
       className={clsx(
-        "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
         active
-          ? "bg-ink-100 text-ink-700 hover:bg-ink-200 dark:bg-ink-800 dark:text-ink-100 dark:hover:bg-ink-700"
-          : "bg-red-500 text-white hover:bg-red-600"
+          ? "bg-white/10 text-white hover:bg-white/15"
+          : "bg-red-600 text-white hover:bg-red-500"
       )}
     >
       {icon}

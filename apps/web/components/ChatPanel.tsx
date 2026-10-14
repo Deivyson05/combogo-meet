@@ -30,10 +30,10 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex h-[500px] w-[400px] shrink-0 flex-col rounded-xl2 border border-ink-100 bg-white dark:border-ink-800 dark:bg-ink-900 fixed right-6">
-      <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3 dark:border-ink-800">
+    <div className="fixed right-3 top-20 z-10 flex h-[min(500px,calc(100vh-7rem))] w-[min(400px,calc(100vw-1.5rem))] shrink-0 flex-col rounded-xl border border-white/10 bg-[#1b1c1d] shadow-2xl shadow-black/50 sm:right-6">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <span className="text-sm font-medium text-ink-900 dark:text-white">Chat da chamada</span>
-        <button onClick={onClose} aria-label="Fechar chat" className="text-ink-400 hover:text-ink-600">
+        <button onClick={onClose} aria-label="Fechar chat" className="rounded-md p-1 text-ink-400 transition hover:bg-white/10 hover:text-white">
           <X size={18} />
         </button>
       </div>
@@ -45,24 +45,24 @@ export function ChatPanel({
         {messages.map((m) => (
           <div key={m.id} className="text-sm">
             <div className="flex items-baseline gap-2">
-              <span className="font-medium text-ink-900 dark:text-white">
+              <span className="font-medium text-white">
                 {m.from === localId ? "Você" : m.name}
               </span>
               <span className="text-[10px] text-ink-400">
                 {new Date(m.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
             </div>
-            <p className="text-ink-600 dark:text-ink-300">{m.text}</p>
+            <p className="text-ink-200">{m.text}</p>
           </div>
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-ink-100 p-3 dark:border-ink-800">
+      <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-white/10 p-3">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Escreva uma mensagem..."
-          className="flex-1 rounded-lg border border-ink-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-primary-500 dark:border-ink-700"
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#111213] px-3 py-2 text-sm text-white outline-none placeholder:text-ink-500 focus:border-primary-500"
         />
         <button
           type="submit"
